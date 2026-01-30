@@ -2,7 +2,7 @@
 * { box-sizing: border-box; user-select: none; }
 body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: 'Malgun Gothic', sans-serif; }
 
-/* --- 헤더 영역 --- */
+/* --- 헤더 --- */
 #header-area {
     position: fixed; top: 0; left: 0; width: 100%; z-index: 2000;
     background-color: #d3d3d3; border-bottom: 2px solid #000;
@@ -22,7 +22,6 @@ body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 }
 .btn-group button:hover { background: #eee; }
 
-/* 탭 바 */
 .tab-bar {
     display: flex; align-items: flex-end; padding-left: 10px; height: 40px;
     background: #e0e0e0; border-top: 1px solid #999;
@@ -34,12 +33,9 @@ body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
 }
 .tab.active { background: #fff; font-weight: bold; border-bottom: 1px solid #fff; }
 .tab input { border: none; background: transparent; width: 80px; text-align: center; outline: none; }
-.add-tab-btn {
-    padding: 5px 10px; font-weight: bold; cursor: pointer; font-size: 18px;
-    background: transparent; border: none;
-}
+.add-tab-btn { padding: 5px 10px; font-weight: bold; cursor: pointer; font-size: 18px; background: transparent; border: none; }
 
-/* --- 캔버스 영역 --- */
+/* --- 캔버스 --- */
 #viewport {
     position: absolute; top: 100px; left: 0; right: 0; bottom: 0;
     overflow: auto; background-color: #fff;
@@ -54,26 +50,20 @@ body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
     background-color: #000; z-index: 0;
 }
 
-/* --- SVG (선) 스타일 --- */
+/* --- SVG (선) --- */
 #svg-layer {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    z-index: 5; /* 객체 뒤, 배경 앞 */
-    pointer-events: none; 
+    z-index: 5; pointer-events: none; 
 }
-/* 선 자체 스타일 */
 .connection-line {
-    fill: none; /* 내부는 채우지 않음 */
-    stroke: #555; stroke-width: 3px; cursor: pointer;
-    pointer-events: stroke; /* 선만 클릭 가능 */
-    transition: stroke 0.2s;
+    fill: none; stroke: #555; stroke-width: 3px; cursor: pointer;
+    pointer-events: stroke; transition: stroke 0.2s;
 }
 .connection-line:hover { stroke: orange; stroke-width: 5px; }
 .connection-line.dashed { stroke-dasharray: 10, 5; }
 
 /* --- 메뉴 --- */
-#menu-container {
-    position: fixed; top: 110px; right: 20px; z-index: 1500;
-}
+#menu-container { position: fixed; top: 110px; right: 20px; z-index: 1500; }
 #menu-btn {
     width: 80px; height: 40px; background: #e0e6eb; border: 2px solid #000;
     display: flex; justify-content: center; align-items: center;
@@ -90,69 +80,62 @@ body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
     background: #f9f9f9; cursor: grab; text-align: center;
 }
 
-/* --- 객체 (Object) 스타일 --- */
+/* --- 객체 (Object) --- */
 .obj {
     position: absolute; min-width: 150px; min-height: 80px; padding: 10px;
     background: #fff; border: 1px solid #000; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-    cursor: move; z-index: 10; 
-    display: flex; flex-direction: column; gap: 5px;
-    
-    /* [수정] 스크롤바 제거를 위해 overflow: hidden 사용 */
+    cursor: move; z-index: 10; display: flex; flex-direction: column; gap: 5px;
     overflow: hidden; 
 }
 
-/* [추가] 커스텀 리사이즈 핸들 */
+/* [추가] 삭제 버튼 스타일 */
+.delete-btn {
+    position: absolute; top: 0; right: 0;
+    width: 20px; height: 20px;
+    background-color: #ff4444; color: white;
+    font-weight: bold; text-align: center; line-height: 20px;
+    cursor: pointer; z-index: 100; font-size: 12px;
+    display: none; /* 평소엔 숨김 */
+}
+.obj:hover .delete-btn { display: block; } /* 마우스 올리면 보임 */
+.delete-btn:hover { background-color: #cc0000; }
+
+/* 리사이즈 핸들 */
 .resize-handle {
     position: absolute; bottom: 0; right: 0;
-    width: 15px; height: 15px;
-    cursor: nwse-resize; /* 대각선 커서 */
-    background: linear-gradient(135deg, transparent 50%, #999 50%);
-    z-index: 50; /* 내용물보다 위에 */
+    width: 15px; height: 15px; cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, #999 50%); z-index: 50;
 }
 .resize-handle:hover { background: linear-gradient(135deg, transparent 50%, orange 50%); }
 
 .obj:active { box-shadow: 4px 4px 10px rgba(0,0,0,0.3); z-index: 100; }
 .obj-content { outline: none; min-height: 20px; cursor: text; }
 
-/* 앵커(연결점) 스타일 */
+/* 앵커 */
 .anchor {
     position: absolute; width: 14px; height: 14px;
     background: #fff; border: 2px solid #000; border-radius: 50%;
-    z-index: 60; cursor: crosshair;
-    display: none;
+    z-index: 60; cursor: crosshair; display: none;
 }
 .obj:hover .anchor { display: block; }
 .anchor:hover { background: orange; transform: scale(1.2); }
-/* 앵커 위치 보정 */
 .anchor.top { top: -7px; left: 50%; transform: translateX(-50%); }
 .anchor.bottom { bottom: -7px; left: 50%; transform: translateX(-50%); }
 .anchor.left { top: 50%; left: -7px; transform: translateY(-50%); }
 .anchor.right { top: 50%; right: -7px; transform: translateY(-50%); }
 
-/* --- 객체별 상세 스타일 --- */
-
-/* 1. 제목 객체 (중앙 정렬) */
-.obj-title { 
-    border: 2px solid #333; font-weight: bold; 
-    justify-content: center; align-items: center; text-align: center;
-}
-.obj-title .obj-content {
-    width: 100%; /* 전체 너비 사용 */
-    border: none;
-}
+/* 객체별 내부 스타일 */
+.obj-title { border: 2px solid #333; font-weight: bold; justify-content: center; align-items: center; text-align: center; }
+.obj-title .obj-content { width: 100%; border: none; }
 .color-picker { width: 100%; height: 5px; border: none; padding: 0; margin-top: 5px; cursor: pointer; position: absolute; bottom: 0; left: 0; display: none;}
-/* 제목 객체 호버시에만 컬러픽커 보이게 하거나, 디자인상 숨김 처리했다가 필요시 표시 */
 .obj-title:hover .color-picker { display: block; height: 10px; }
 
-
-/* 2. 사건/사고 */
 .obj-plot { border-left: 5px solid #000; }
 .plot-header { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .toggle-btn { width: 20px; height: 20px; background: red; border: 1px solid #333; border-radius: 50%; cursor: pointer; flex-shrink: 0; margin-left: 5px; }
 .toggle-btn.active { background: lime; }
 .annotation { font-size: 0.8em; color: #666; border-top: 1px dotted #ccc; margin-top: 5px; padding-top: 5px; }
 
-/* 3. 캐릭터 */
 .obj-char { border-radius: 10px; overflow: hidden; }
 .char-img-area { width: 100%; flex-grow: 1; background: #eee; min-height: 50px; display: flex; justify-content: center; align-items: center; cursor: pointer; overflow: hidden; }
 .char-img-area img { width: 100%; height: 100%; object-fit: contain; display: block; }

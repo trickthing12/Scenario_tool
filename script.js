@@ -1,324 +1,135 @@
-// 유틸리티: UUID 생성
-function uuid() {
-    return 'xxxx-xxxx-xxxx-xxxx'.replace(/[x]/g, () => (Math.random()*16|0).toString(16));
+:root {
+    --bg-color: #f0f4f9;
+    --sidebar-bg: #ffffff;
+    --border-color: #e5e7eb;
+    --primary-color: #1a73e8;
+    --text-color: #1f1f1f;
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
 }
 
-// DOM 요소 참조
-const workspace = document.getElementById('workspace');
-const timelineContainer = document.getElementById('timeline-container');
-const svgLayer = document.getElementById('svg-layer');
-const titleInput = document.getElementById('scenario-title');
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Noto Sans KR', sans-serif; background-color: var(--bg-color); color: var(--text-color); overflow: hidden; display: flex; height: 100vh; }
 
-let lines = []; 
-let activeAnchor = null;
-let draggedType = null;
+/* 1. 사이드바 수정 (가독성 확보) */
+#sidebar { 
+    min-width: 260px; /* 최소 너비 고정 */
+    width: 260px;
+    background: var(--sidebar-bg); 
+    border-right: 1px solid var(--border-color); 
+    display: flex; flex-direction: column; 
+    padding: 20px; z-index: 20; 
+    flex-shrink: 0; /* 줄어들지 않음 */
+}
+.brand { font-size: 1.2rem; font-weight: 700; color: var(--primary-color); margin-bottom: 20px; white-space: nowrap; }
+.guide-box { background: #f8f9fa; border-radius: 8px; padding: 15px; margin-bottom: 15px; font-size: 0.9rem; line-height: 1.6; color: #444; word-break: keep-all; }
+.guide-title { font-weight: 700; margin-bottom: 8px; color: #333; display: block; border-bottom: 2px solid #ddd; padding-bottom: 4px; }
+.guide-list { padding-left: 15px; margin: 0; }
+.guide-list li { margin-bottom: 5px; }
 
-// 초기 설정
-titleInput.addEventListener('input', (e) => document.title = e.target.value || "Scenario Planner");
+/* 메인 영역 */
+#main-content { flex-grow: 1; display: flex; flex-direction: column; position: relative; min-width: 0; }
 
-document.getElementById('extend-btn').addEventListener('click', () => {
-    timelineContainer.style.width = (timelineContainer.offsetWidth + 1000) + 'px';
-    updateAllLines();
-});
+/* 헤더 & 햄버거 메뉴 수정 */
+#header { height: 60px; background: rgba(255,255,255,0.95); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 1000; flex-shrink: 0; }
+#scenario-title { font-size: 1.1rem; font-weight: 600; border: none; background: transparent; padding: 5px; outline: none; width: 300px; }
+.header-right { display: flex; align-items: center; gap: 10px; position: relative; } /* relative 추가 */
 
-// 드래그 앤 드롭 이벤트 설정
-document.querySelectorAll('.draggable-item').forEach(item => {
-    item.addEventListener('dragstart', (e) => draggedType = e.target.getAttribute('data-type'));
-});
+#menu-container { position: relative; display: flex; align-items: center; justify-content: center; }
+#hamburger-icon { font-size: 28px; cursor: pointer; padding: 5px 10px; border-radius: 4px; user-select: none; }
+#hamburger-icon:hover { background: #eee; }
 
-workspace.addEventListener('dragover', (e) => e.preventDefault());
-workspace.addEventListener('drop', (e) => {
-    e.preventDefault();
-    if (!draggedType) return;
-    const rect = timelineContainer.getBoundingClientRect();
-    const x = e.clientX - rect.left + workspace.scrollLeft; 
-    const y = e.clientY - rect.top + workspace.scrollTop; 
-    createObject({ type: draggedType, x, y });
-    draggedType = null;
-});
+/* 팔레트 */
+#object-palette {
+    display: none; position: absolute; top: 100%; right: 0; margin-top: 10px;
+    background: white; border: 1px solid var(--border-color); border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2); padding: 10px; width: 180px;
+    flex-direction: column; gap: 8px; z-index: 9999;
+}
+#menu-container:hover #object-palette { display: flex; }
+.draggable-item { padding: 10px; background: #f1f3f4; border-radius: 6px; cursor: grab; text-align: center; font-size: 0.9rem; font-weight: 500; border: 1px solid #ddd; }
+.draggable-item:hover { background: #e8eaed; border-color: #bbb; }
 
-// 객체 생성 함수
-function createObject(params) {
-    const id = params.id || uuid();
-    const el = document.createElement('div');
-    el.id = id;
-    el.classList.add('placed-object');
-    el.dataset.type = params.type;
-    el.style.left = params.x + 'px';
-    el.style.top = params.y + 'px';
-    
-    // 타입별 설정
-    let defaultText = "Text";
-    let defaultColor = "#333333";
-
-    if (params.type === 'title') {
-        el.classList.add('obj-title');
-        defaultText = "Title";
-        defaultColor = "#333333";
-    } else if (params.type === 'incident') {
-        el.classList.add('obj-incident');
-        defaultText = "사건/사고";
-        defaultColor = "#333333"; // 테두리색
-    } else if (params.type === 'char') {
-        el.classList.add('obj-char');
-        defaultText = "캐릭터";
-        defaultColor = "#e8f0fe"; // 배경색
-    } else if (params.type === 'memo') {
-        el.classList.add('obj-memo');
-        defaultText = "메모...";
-        defaultColor = "#fff9c4";
-        if(params.width) el.style.width = params.width;
-        if(params.height) el.style.height = params.height;
-    }
-
-    // 내부 HTML 구조
-    const header = document.createElement('div');
-    header.classList.add('obj-header');
-
-    const span = document.createElement('span');
-    span.classList.add('editable-text');
-    span.innerText = params.text || defaultText;
-    span.contentEditable = true;
-    header.appendChild(span);
-
-    // 컨트롤 박스
-    const controls = document.createElement('div');
-    controls.style.display = 'flex';
-    controls.style.gap = '5px';
-    controls.style.alignItems = 'center';
-
-    // 떡밥 마커 (사건용)
-    if (params.type === 'incident') {
-        const baitBtn = document.createElement('div');
-        baitBtn.classList.add('bait-marker');
-        baitBtn.innerText = "?";
-        if (params.isBait) { baitBtn.classList.add('active'); baitBtn.innerText = "!"; }
-        baitBtn.onclick = (e) => {
-            e.stopPropagation();
-            baitBtn.classList.toggle('active');
-            baitBtn.innerText = baitBtn.classList.contains('active') ? "!" : "?";
-        };
-        controls.appendChild(baitBtn);
-    }
-
-    // 컬러 피커
-    const colorInput = document.createElement('input');
-    colorInput.type = "color";
-    colorInput.classList.add('color-picker');
-    colorInput.value = params.color || defaultColor;
-    colorInput.addEventListener('input', (e) => applyColor(el, params.type, e.target.value));
-    controls.appendChild(colorInput);
-
-    header.appendChild(controls);
-    el.appendChild(header);
-
-    // 초기 색상 적용
-    applyColor(el, params.type, colorInput.value);
-
-    // 앵커(연결점) 추가
-    ['top', 'bottom', 'left', 'right'].forEach(pos => {
-        const anchor = document.createElement('div');
-        anchor.classList.add('anchor', pos);
-        anchor.dataset.pos = pos;
-        anchor.dataset.parentId = id;
-        anchor.onclick = (e) => handleAnchorClick(e, anchor);
-        el.appendChild(anchor);
-    });
-
-    makeElementDraggable(el);
-    timelineContainer.appendChild(el);
+/* 워크스페이스 & 스크롤 & 줌 */
+#workspace { 
+    flex-grow: 1; position: relative; 
+    overflow: auto; /* 상하좌우 스크롤 */
+    background-color: var(--bg-color); 
 }
 
-function applyColor(el, type, color) {
-    if (type === 'title') el.querySelector('.editable-text').style.color = color;
-    else if (type === 'incident') el.style.borderLeftColor = color;
-    else el.style.backgroundColor = color;
+#timeline-container { 
+    position: relative; 
+    width: 3000px; height: 2000px; /* 상하 스크롤을 위해 높이 충분히 확보 */
+    transform-origin: 0 0; /* 줌 기준점: 좌측 상단 */
+    transition: transform 0.1s ease-out; /* 부드러운 줌 */
 }
 
-// 연결 로직
-function handleAnchorClick(e, anchor) {
-    e.stopPropagation();
-    if (activeAnchor) {
-        if (activeAnchor !== anchor) {
-            createLine(activeAnchor, anchor);
-            activeAnchor.classList.remove('active');
-            activeAnchor = null;
-        }
-    } else {
-        activeAnchor = anchor;
-        activeAnchor.classList.add('active');
-    }
+/* 3. 중앙선 수정 (선명하게) */
+#central-line { 
+    position: absolute; top: 50%; left: 50px; /* 시작점 여백 */
+    width: calc(100% - 50px); height: 4px; /* 두께 증가 */
+    background-color: #000000; z-index: 0; 
 }
 
-function createLine(startAnchor, endAnchor, existingData = null) {
-    const lineId = existingData ? existingData.id : uuid();
-    const lineData = existingData || {
-        id: lineId,
-        from: startAnchor.dataset.parentId,
-        fromPos: startAnchor.dataset.pos,
-        to: endAnchor.dataset.parentId,
-        toPos: endAnchor.dataset.pos,
-        style: 'solid',
-        text: ''
-    };
-    
-    if (!existingData) lines.push(lineData);
-
-    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    g.id = lineId;
-    
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.classList.add('connection-line');
-    if (lineData.style === 'dashed') path.style.strokeDasharray = "5,5";
-
-    path.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const newText = prompt("선 텍스트 입력 (취소 시 점선/실선 변경):", lineData.text);
-        if (newText !== null) lineData.text = newText;
-        else lineData.style = lineData.style === 'solid' ? 'dashed' : 'solid';
-        updateLineVisual(lineId);
-    });
-
-    const textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    textEl.classList.add('line-text');
-    textEl.textContent = lineData.text;
-
-    g.appendChild(path);
-    g.appendChild(textEl);
-    svgLayer.appendChild(g);
-
-    updateSingleLine(lineData);
+/* 6. 시작 지점 (START) */
+#start-node {
+    position: absolute; left: 0; top: 50%; transform: translate(-50%, -50%);
+    width: 24px; height: 24px; background: black; border-radius: 50%;
+    z-index: 1;
+}
+.start-text {
+    position: absolute; top: 30px; left: 50%; transform: translateX(-50%);
+    color: #d32f2f; font-weight: 900; font-size: 14px; letter-spacing: 1px;
 }
 
-function updateSingleLine(lineData) {
-    const elFrom = document.getElementById(lineData.from);
-    const elTo = document.getElementById(lineData.to);
-    if (!elFrom || !elTo) return;
-
-    const p1 = getAnchorPos(elFrom, lineData.fromPos);
-    const p2 = getAnchorPos(elTo, lineData.toPos);
-    const g = document.getElementById(lineData.id);
-    if (!g) return;
-
-    const path = g.querySelector('path');
-    const text = g.querySelector('text');
-
-    const dx = Math.abs(p1.x - p2.x) * 0.5;
-    const d = `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}`;
-    
-    path.setAttribute("d", d);
-    path.style.strokeDasharray = lineData.style === 'dashed' ? "5,5" : "none";
-
-    text.setAttribute("x", (p1.x + p2.x) / 2);
-    text.setAttribute("y", (p1.y + p2.y) / 2 - 5);
-    text.textContent = lineData.text;
+#extend-btn { 
+    position: absolute; top: 50%; right: -50px; transform: translateY(-50%); 
+    width: 40px; height: 40px; border-radius: 50%; background: white; 
+    border: 2px solid #000; cursor: pointer; display: flex; align-items: center; justify-content: center; 
+    z-index: 10; font-size: 1.5rem; font-weight: bold;
 }
 
-function updateAllLines() { lines.forEach(updateSingleLine); }
+/* SVG 및 객체 */
+#svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.connection-line { stroke: #555; stroke-width: 2; fill: none; pointer-events: stroke; cursor: pointer; transition: stroke 0.2s; }
+.connection-line:hover { stroke: var(--primary-color); stroke-width: 4; }
+.line-text { fill: #000; font-size: 12px; font-weight: bold; background: white; text-anchor: middle; paint-order: stroke; stroke: white; stroke-width: 3px; }
 
-function getAnchorPos(el, pos) {
-    const left = el.offsetLeft;
-    const top = el.offsetTop;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    if (pos === 'top') return { x: left + w/2, y: top };
-    if (pos === 'bottom') return { x: left + w/2, y: top + h };
-    if (pos === 'left') return { x: left, y: top + h/2 };
-    if (pos === 'right') return { x: left + w, y: top + h/2 };
-    return { x: left, y: top };
+.placed-object {
+    position: absolute; padding: 12px; border-radius: 12px; cursor: move; z-index: 10;
+    min-width: 120px; box-shadow: var(--shadow-md); display: flex; flex-direction: column; gap: 8px;
+    background: white; border: 1px solid transparent; 
 }
+.placed-object:hover { box-shadow: 0 8px 15px rgba(0,0,0,0.2); z-index: 100; border-color: #999; }
 
-function updateLineVisual(lineId) {
-    const lineData = lines.find(l => l.id === lineId);
-    if (lineData) updateSingleLine(lineData);
-}
+/* 객체 내부 스타일 */
+.obj-header { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
+.editable-text { outline: none; min-width: 50px; line-height: 1.4; border-bottom: 1px dashed transparent; }
+.editable-text:focus { border-bottom-color: #999; }
+.color-picker { width: 18px; height: 18px; border: none; cursor: pointer; background: none; padding: 0; border-radius: 50%; overflow: hidden; }
 
-function makeElementDraggable(elmnt) {
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    
-    elmnt.onmousedown = (e) => {
-        if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.classList.contains('anchor') || e.target.classList.contains('bait-marker')) return;
-        e.preventDefault();
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        document.onmouseup = closeDragElement;
-        document.onmousemove = elementDrag;
-        elmnt.style.zIndex = 100;
-    };
+/* 타입별 스타일 */
+.obj-title { background: transparent; border: 2px dashed #000; box-shadow: none; }
+.obj-title .editable-text { font-size: 2rem; font-weight: 800; color: #000; }
+.obj-incident { background: #fff; border: 1px solid #333; border-left: 6px solid #000; }
+.obj-char { background: #e3f2fd; border: 2px solid #2196f3; border-radius: 50px; padding: 8px 20px; flex-direction: row; }
+.obj-memo { background: #fff9c4; border: 1px solid #f9a825; min-width: 150px; min-height: 100px; resize: both; overflow: auto; }
 
-    function elementDrag(e) {
-        e.preventDefault();
-        pos1 = pos3 - e.clientX;
-        pos2 = pos4 - e.clientY;
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
-        elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
-        updateAllLines();
-    }
+.bait-marker { width: 20px; height: 20px; border-radius: 50%; background: #eee; color: #999; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; font-weight: bold; }
+.bait-marker.active { background: #d32f2f; color: white; }
 
-    function closeDragElement() {
-        document.onmouseup = null;
-        document.onmousemove = null;
-        elmnt.style.zIndex = 10;
-    }
-}
+.anchor { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid #555; border-radius: 50%; cursor: crosshair; opacity: 0; transition: all 0.2s; z-index: 101; }
+.placed-object:hover .anchor { opacity: 1; }
+.anchor:hover { transform: scale(1.3); background: var(--primary-color); border-color: var(--primary-color); }
+.anchor.active { background: #d32f2f; border-color: #d32f2f; opacity: 1; transform: scale(1.3); }
+.anchor.top { top: -6px; left: 50%; transform: translateX(-50%); }
+.anchor.bottom { bottom: -6px; left: 50%; transform: translateX(-50%); }
+.anchor.left { top: 50%; left: -6px; transform: translateY(-50%); }
+.anchor.right { top: 50%; right: -6px; transform: translateY(-50%); }
 
-// 저장/불러오기
-function saveScenario() {
-    const title = titleInput.value || "MyScenario";
-    const objects = [];
-    document.querySelectorAll('.placed-object').forEach(obj => {
-        objects.push({
-            id: obj.id,
-            type: obj.dataset.type,
-            left: parseInt(obj.style.left),
-            top: parseInt(obj.style.top),
-            text: obj.querySelector('.editable-text').innerText,
-            color: obj.querySelector('.color-picker').value,
-            isBait: obj.querySelector('.bait-marker')?.classList.contains('active') || false,
-            width: obj.style.width,
-            height: obj.style.height
-        });
-    });
-
-    const data = { title, width: timelineContainer.style.width, objects, lines };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${title}.json`;
-    link.click();
-}
-
-function loadScenario(input) {
-    const file = input.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            titleInput.value = data.title || "";
-            timelineContainer.style.width = data.width || "3000px";
-            
-            document.querySelectorAll('.placed-object').forEach(el => el.remove());
-            svgLayer.innerHTML = '';
-            lines = [];
-
-            data.objects.forEach(item => createObject({
-                id: item.id, type: item.type, x: item.left, y: item.top, 
-                text: item.text, color: item.color, isBait: item.isBait, 
-                width: item.width, height: item.height
-            }));
-
-            if (data.lines) {
-                data.lines.forEach(line => {
-                   const f = document.getElementById(line.from);
-                   const t = document.getElementById(line.to);
-                   if(f && t) createLine(f.querySelector(`.anchor.${line.fromPos}`), t.querySelector(`.anchor.${line.toPos}`), line);
-                });
-            }
-        } catch (err) { alert("오류: " + err); }
-    };
-    reader.readAsText(file);
-    input.value = '';
+/* 줌 인디케이터 */
+#zoom-indicator {
+    position: fixed; bottom: 20px; right: 30px; 
+    background: rgba(0,0,0,0.7); color: white; 
+    padding: 8px 16px; border-radius: 20px; font-size: 0.9rem; font-weight: bold;
+    pointer-events: none; z-index: 2000;
 }

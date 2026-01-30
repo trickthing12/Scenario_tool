@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Scenario</title>
+    <style>
+        /* 기본 스타일 초기화 */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Pretendard', sans-serif; overflow: hidden; background-color: #f4f4f4; }
+
+        /* --- 상단 UI 레이어 (고정) --- */
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+
+        /* 2. 좌측 상단 시나리오 제목 */
+        #scenario-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: none;
+            border-bottom: 2px solid #ddd;
+            padding: 5px;
+            width: 300px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        #scenario-title:focus { border-bottom-color: #333; }
+
+        /* 3. 우측 상단 햄버거 메뉴 */
+        #menu-container { position: relative; }
+        #hamburger-icon {
+            font-size: 24px;
+            cursor: pointer;
+            padding: 10px;
+        }
+        
+        /* 메뉴 호버 시 나타나는 팔레트 */
+        #object-palette {
+            display: none; /* 기본 숨김 */
+            position: absolute;
+            top: 50px;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            padding: 10px;
+            width: 150px;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #menu-container:hover #object-palette { display: flex; }
+
+        /* 드래그 가능한 아이템들 */
+        .draggable-item {
+            padding: 10px;
+            background: #eee;
+            border-radius: 4px;
+            cursor: grab;
+            text-align: center;
+            font-size: 0.9rem;
+            user-select: none;
+        }
+        .draggable-item:hover { background: #ddd; }
+
+        /* --- 메인 워크스페이스 (스크롤 가능) --- */
+        #workspace {
+            position: absolute;
+            top: 60px; /* 헤더 높이만큼 띄움 */
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: auto; /* 스크롤 활성화 */
+            background-color: #f9f9f9;
+        }
+
+        /* 타임라인 컨테이너 (늘어나는 영역) */
+        #timeline-container {
+            position: relative;
+            width: 2000px; /* 초기 길이 */
+            height: 100%;
+            min-width: 100%;
+        }
+
+        /* 1. 중앙 선 */
+        #central-line {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background-color: #333;
+            transform: translateY(-50%);
+            z-index: 0;
+        }
+
+        /* 길이 연장 버튼 */
+        #extend-btn {
+            position: absolute;
+            top: 50%;
+            right: -50px; /* 선 끝보다 조금 더 뒤에 */
+            transform: translateY(-50%);
+            padding: 10px 20px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            z-index: 10;
+        }
+        #extend-btn:hover { background: #555; }
+
+        /* --- 배치되는 객체 스타일 --- */
+        .placed-object {
+            position: absolute;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: move;
+            z-index: 5;
+            min-width: 100px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* 5. 제목 객체 스타일 */
+        .obj-title {
+            background-color: transparent; /* 배경 투명 */
+            font-size: 2rem;
+            font-weight: bold;
+            border: 2px dashed #ccc; /* 편집 가능함을 나타내는 점선 */
+        }
+        .obj-title:focus { border: 2px solid #007bff; outline: none; }
+        
+        /* 설명 객체 */
+        .obj-desc { background-color: #fff; border: 1px solid #ddd; font-size: 0.9rem; }
+        
+        /* 캐릭터 객체 */
+        .obj-char { background-color: #e3f2fd; border: 1px solid #90caf9; border-radius: 50%; width: 60px; height: 60px; justify-content: center; }
+
+        /* 컬러 피커 (제목 객체용) */
+        .color-picker {
+            width: 20px;
+            height: 20px;
+            border: none;
+            cursor: pointer;
+            background: none;
+            padding: 0;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <input type="text" id="scenario-title" placeholder="시나리오 제목을 입력하세요">
+
+        <div id="menu-container">
+            <div id="hamburger-icon">☰</div>
+            <div id="object-palette">
+                <div class="draggable-item" draggable="true" data-type="title">Title (제목)</div>
+                <div class="draggable-item" draggable="true" data-type="desc">Description (설명)</div>
+                <div class="draggable-item" draggable="true" data-type="char">Character (캐릭터)</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="workspace">
+        <div id="timeline-container">
+            <div id="central-line"></div>
+            <button id="extend-btn" title="타임라인 늘리기">+</button>
+        </div>
+    </div>
+
+    <script>
+        // DOM 요소 참조
+        const workspace = document.getElementById('workspace');
+        const timelineContainer = document.getElementById('timeline-container');
+        const extendBtn = document.getElementById('extend-btn');
+        const titleInput = document.getElementById('scenario-title');
+        const draggables = document.querySelectorAll('.draggable-item');
+
+        // 2. 제목 입력 시 문서 타이틀 변경
+        titleInput.addEventListener('input', (e) => {
+            document.title = e.target.value || "New Scenario";
+        });
+
+        // 1. 타임라인 무한 확장 기능
+        extendBtn.addEventListener('click', () => {
+            const currentWidth = timelineContainer.offsetWidth;
+            timelineContainer.style.width = (currentWidth + 1000) + 'px'; // 1000px씩 증가
+            // 버튼 위치도 자동으로 따라감 (CSS right 기준이므로 컨테이너가 커지면 버튼도 이동)
+        });
+
+        // 드래그 앤 드롭 로직
+        let draggedType = null;
+
+        // 드래그 시작
+        draggables.forEach(item => {
+            item.addEventListener('dragstart', (e) => {
+                draggedType = e.target.getAttribute('data-type');
+                e.dataTransfer.effectAllowed = "copy";
+            });
+        });
+
+        // 드래그 오버 (허용)
+        workspace.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        // 드롭 (객체 생성)
+        workspace.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (!draggedType) return;
+
+            // 스크롤 위치를 고려한 좌표 계산
+            const rect = timelineContainer.getBoundingClientRect();
+            const x = e.clientX - rect.left + workspace.scrollLeft; 
+            const y = e.clientY - rect.top + workspace.scrollTop; 
+
+            createObject(draggedType, x, y);
+            draggedType = null; // 초기화
+        });
+
+        // 5. 객체 생성 함수
+        function createObject(type, x, y) {
+            const el = document.createElement('div');
+            el.classList.add('placed-object');
+            
+            // 위치 설정 (마우스 커서 중앙에 오도록 약간 보정)
+            el.style.left = (x - 50) + 'px';
+            el.style.top = (y - 20) + 'px'; // 헤더 높이 고려 X (relative to timeline-container)
+
+            // 타입별 내용 설정
+            if (type === 'title') {
+                el.classList.add('obj-title');
+                
+                // 텍스트 영역 (수정 가능)
+                const span = document.createElement('span');
+                span.innerText = "Title";
+                span.contentEditable = true; // 텍스트 수정 가능
+                span.style.marginRight = "10px";
+                
+                // 컬러 피커 (색상 수정)
+                const colorInput = document.createElement('input');
+                colorInput.type = "color";
+                colorInput.value = "#000000";
+                colorInput.classList.add('color-picker');
+                
+                // 색상 변경 이벤트
+                colorInput.addEventListener('input', (e) => {
+                    el.style.color = e.target.value;
+                });
+
+                el.appendChild(span);
+                el.appendChild(colorInput);
+
+            } else if (type === 'desc') {
+                el.classList.add('obj-desc');
+                el.innerText = "새로운 사건 설명";
+                el.contentEditable = true;
+            } else if (type === 'char') {
+                el.classList.add('obj-char');
+                el.innerText = "Char";
+                el.contentEditable = true;
+            }
+
+            // (추가 기능) 배치된 객체 드래그 이동 기능 (간단 구현)
+            makeElementDraggable(el);
+
+            timelineContainer.appendChild(el);
+        }
+
+        // 배치된 요소를 다시 드래그해서 이동시키는 로직
+        function makeElementDraggable(elmnt) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            elmnt.onmousedown = dragMouseDown;
+
+            function dragMouseDown(e) {
+                // contentEditable 요소 클릭 시 드래그 방지 (텍스트 수정 우선)
+                if(e.target.isContentEditable || e.target.tagName === 'INPUT') return;
+
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+            }
+
+            function elementDrag(e) {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+                elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+            }
+
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+    </script>
+</body>
+</html>

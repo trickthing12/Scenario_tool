@@ -8,25 +8,20 @@ let appState = {
     nextLineId: 0
 };
 
-// 선 그리기 관련 변수
 let isDrawingLine = false;
 let startAnchor = null;
-let tempPathElement = null; // Line 대신 Path 사용
+let tempPathElement = null;
 
-// DOM 요소
 const canvas = document.getElementById('canvas');
 const svgLayer = document.getElementById('svg-layer');
 const tabContainer = document.getElementById('tab-container');
 const titleInput = document.getElementById('scenario-title');
 const viewport = document.getElementById('viewport');
 
-// --- 초기화 ---
 window.onload = function() {
     addTab();
-    
     titleInput.addEventListener('input', (e) => { appState.title = e.target.value; });
 
-    // 캔버스 확장 (방향키)
     window.addEventListener('keydown', (e) => {
         const step = 50;
         const currentW = parseInt(canvas.style.width);
@@ -42,26 +37,21 @@ window.onload = function() {
         }
     });
 
-    // 드래그 중인 임시 선 업데이트
     document.addEventListener('mousemove', (e) => {
         if (isDrawingLine && tempPathElement && startAnchor) {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left + viewport.scrollLeft;
             const mouseY = e.clientY - rect.top + viewport.scrollTop;
-            
             const startPos = getAnchorPosition(startAnchor.objId, startAnchor.dir);
-            // 임시 선은 단순 직선으로 표시 (성능상 이점)
-            const d = `M ${startPos.x} ${startPos.y} L ${mouseX} ${mouseY}`;
-            tempPathElement.setAttribute('d', d);
+            // 드래그 중에는 직선으로 표시
+            tempPathElement.setAttribute('d', `M ${startPos.x} ${startPos.y} L ${mouseX} ${mouseY}`);
         }
     });
 
-    document.addEventListener('mouseup', () => {
-        if (isDrawingLine) cancelLineDrawing();
-    });
+    document.addEventListener('mouseup', () => { if (isDrawingLine) cancelLineDrawing(); });
 };
 
-// --- 탭(소제목) 관리 ---
+// --- 탭 관리 ---
 function addTab(name = null) {
     const id = appState.nextTabId++;
     const tabName = name || `소제목 ${id + 1}`;
@@ -128,7 +118,7 @@ function saveCurrentTabState() {
     currentTab.objects = currentObjects;
 }
 
-// --- 객체 생성 ---
+// --- 객체 생성 (삭제 기능 포함) ---
 function createObjectElement(type, x, y, data = null) {
     const id = data ? data.id : `obj-${appState.nextObjId++}`;
     const el = document.createElement('div');
@@ -138,16 +128,44 @@ function createObjectElement(type, x, y, data = null) {
     if (data && data.height) el.style.height = data.height;
     el.dataset.type = type; el.dataset.id = id;
 
-    // 드래그 기능 연결
     makeElementDraggable(el);
 
-    // [변경 1] 커스텀 리사이즈 핸들 추가
+    // 1. 리사이즈 핸들
     const resizer = document.createElement('div');
     resizer.className = 'resize-handle';
-    makeElementResizable(el, resizer); // 리사이즈 기능 연결
+    makeElementResizable(el, resizer);
     el.appendChild(resizer);
 
-    // 4방향 앵커 생성
+    // [추가] 2. 삭제 버튼 (오른쪽 상단)
+    const delBtn = document.createElement('div');
+    delBtn.className = 'delete-btn';
+    delBtn.innerText = 'X';
+    delBtn.onclick = (e) => {
+        e.stopPropagation(); // 드래그 방지
+        if(confirm('이 객체를 삭제하시겠습니까?')) {
+            // DOM 제거
+            el.remove();
+            
+            // 데이터(State) 및 관련 선(Line) 제거
+            const curTab = appState.tabs.find(t => t.id === appState.currentTabId);
+            
+            // 객체 목록에서 제거
+            // (saveCurrentTabState가 호출되지 않은 상태일 수 있으므로 여기서 바로 제거하지는 않고, 
+            //  다음에 저장할 때 화면에 없는 건 자동 삭제되지만, 선은 명시적으로 지워야 함)
+            
+            // 연결된 선 제거 (start나 end가 이 객체인 경우)
+            if(curTab.lines) {
+                curTab.lines = curTab.lines.filter(l => l.start !== id && l.end !== id);
+                
+                // 화면의 선 다시 그리기
+                svgLayer.innerHTML = ''; 
+                curTab.lines.forEach(l => createLineElement(l));
+            }
+        }
+    };
+    el.appendChild(delBtn);
+
+    // 3. 앵커 생성
     ['top', 'bottom', 'left', 'right'].forEach(dir => {
         const anchor = document.createElement('div');
         anchor.className = `anchor ${dir}`;
@@ -156,21 +174,19 @@ function createObjectElement(type, x, y, data = null) {
         el.appendChild(anchor);
     });
 
-    // 내부 콘텐츠
+    // 4. 내용물
     const content = document.createElement('div');
     content.className = 'obj-content';
     content.contentEditable = true;
     
-    // [변경 3] 제목 객체 정렬 처리
     if (type === 'title') {
         content.innerText = data ? data.content : '제목';
-        // 색상 선택기
         const cp = document.createElement('input'); cp.type = 'color'; cp.className = 'color-picker';
         cp.value = data ? data.bgColor : '#ffffff';
         cp.oninput = (e) => el.style.backgroundColor = e.target.value;
         el.style.backgroundColor = cp.value; 
-        el.appendChild(content); // 제목은 중앙 정렬 위해 content 먼저
-        el.appendChild(cp);      // 그 다음 컬러픽커
+        el.appendChild(content); 
+        el.appendChild(cp);      
     } else if (type === 'plot') {
         content.innerText = data ? data.content : '플롯';
         const header = document.createElement('div'); header.className = 'plot-header';
@@ -178,7 +194,6 @@ function createObjectElement(type, x, y, data = null) {
         btn.onclick = () => btn.classList.toggle('active');
         content.style.width = '80%'; header.appendChild(content); header.appendChild(btn);
         el.appendChild(header);
-        
         const anno = document.createElement('div'); anno.className = 'annotation';
         anno.contentEditable = true; anno.innerText = data ? data.annotation : '주석..';
         el.appendChild(anno);
@@ -202,7 +217,6 @@ function createObjectElement(type, x, y, data = null) {
         imgArea.onclick = () => fileInput.click();
         el.appendChild(imgArea); el.appendChild(fileInput);
     } else {
-        // desc
         content.innerText = data ? data.content : '설명';
         el.appendChild(content);
     }
@@ -210,25 +224,10 @@ function createObjectElement(type, x, y, data = null) {
     canvas.appendChild(el);
 }
 
-// --- 드래그 앤 드롭 (생성) ---
-function dragStart(e, type) { e.dataTransfer.setData("type", type); }
-function allowDrop(e) { e.preventDefault(); }
-function drop(e) {
-    e.preventDefault();
-    const type = e.dataTransfer.getData("type");
-    if (!type) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left + viewport.scrollLeft;
-    const y = e.clientY - rect.top + viewport.scrollTop;
-    createObjectElement(type, x + 'px', y + 'px');
-}
-
-// --- 선 그리기 (직각 배선 Path 적용) ---
+// --- 선 기능 (직각 경로 + 삭제) ---
 function startLineDrawing(e, objId, dir) {
     e.stopPropagation(); isDrawingLine = true; startAnchor = { objId, dir };
     const p = getAnchorPosition(objId, dir);
-    
-    // SVG Path 생성
     tempPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
     tempPathElement.setAttribute("d", `M ${p.x} ${p.y} L ${p.x} ${p.y}`);
     tempPathElement.setAttribute("fill", "none");
@@ -260,59 +259,42 @@ function cancelLineDrawing() {
     if (tempPathElement) { tempPathElement.remove(); tempPathElement = null; }
 }
 
-// [변경 2] 직각(Elbow) 경로 계산 함수
 function getElbowPath(start, end, startDir, endDir) {
-    // 단순한 직각 라우팅 (중간점 계산)
-    // 실제 객체 회피 알고리즘은 복잡하므로, "꺾이는" 형태로 구현하여 
-    // 대각선으로 객체를 가로지르는 것을 방지함.
-    
     let path = `M ${start.x} ${start.y}`;
-    
-    // 시작점에서 약간 뻗어나감
     const pad = 20; 
     let p1 = { ...start };
     if (startDir === 'top') p1.y -= pad;
     if (startDir === 'bottom') p1.y += pad;
     if (startDir === 'left') p1.x -= pad;
     if (startDir === 'right') p1.x += pad;
-
     path += ` L ${p1.x} ${p1.y}`;
-
-    // 중간 지점 (x축 먼저 이동할지 y축 먼저 이동할지 결정)
     const midX = (p1.x + end.x) / 2;
     const midY = (p1.y + end.y) / 2;
-
-    // 수평/수직 우선순위 간단 로직
     if (startDir === 'left' || startDir === 'right') {
         path += ` L ${midX} ${p1.y} L ${midX} ${end.y} L ${end.x} ${end.y}`;
     } else {
         path += ` L ${p1.x} ${midY} L ${end.x} ${midY} L ${end.x} ${end.y}`;
     }
-
     return path;
 }
 
 function createLineElement(lineData) {
     const p1 = getAnchorPosition(lineData.start, lineData.startDir);
     const p2 = getAnchorPosition(lineData.end, lineData.endDir);
-    if (!p1 || !p2) return;
+    if (!p1 || !p2) return; // 연결된 객체가 없으면 그리지 않음
 
     const pathD = getElbowPath(p1, p2, lineData.startDir, lineData.endDir);
-
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("id", lineData.id);
     path.setAttribute("d", pathD);
     path.setAttribute("class", "connection-line" + (lineData.dashed ? " dashed" : ""));
     
-    // 클릭 시 점선 토글
     path.onclick = () => {
         lineData.dashed = !lineData.dashed;
         lineData.dashed ? path.classList.add('dashed') : path.classList.remove('dashed');
     };
-    
-    // [변경 2] 우클릭 시 삭제
     path.oncontextmenu = (e) => {
-        e.preventDefault(); // 기본 메뉴 방지
+        e.preventDefault();
         if(confirm('선을 삭제하시겠습니까?')) {
             path.remove();
             const cur = appState.tabs.find(t=>t.id===appState.currentTabId);
@@ -341,35 +323,27 @@ function updateAllLines() {
         const p1 = getAnchorPosition(l.start, l.startDir);
         const p2 = getAnchorPosition(l.end, l.endDir);
         if(el && p1 && p2) {
-            // 위치 업데이트 시에도 직각 경로 다시 계산
             el.setAttribute("d", getElbowPath(p1, p2, l.startDir, l.endDir));
         }
     });
 }
 
-// --- [변경 1] 커스텀 리사이즈 로직 ---
 function makeElementResizable(el, resizer) {
     let startX, startY, startWidth, startHeight;
-
     resizer.addEventListener('mousedown', initResize, false);
-
     function initResize(e) {
-        e.stopPropagation(); // 객체 드래그 방지
-        startX = e.clientX;
-        startY = e.clientY;
+        e.stopPropagation(); 
+        startX = e.clientX; startY = e.clientY;
         startWidth = parseInt(document.defaultView.getComputedStyle(el).width, 10);
         startHeight = parseInt(document.defaultView.getComputedStyle(el).height, 10);
-        
         document.documentElement.addEventListener('mousemove', doResize, false);
         document.documentElement.addEventListener('mouseup', stopResize, false);
     }
-
     function doResize(e) {
         el.style.width = (startWidth + e.clientX - startX) + 'px';
         el.style.height = (startHeight + e.clientY - startY) + 'px';
-        updateAllLines(); // 리사이즈 중 선 업데이트
+        updateAllLines();
     }
-
     function stopResize(e) {
         document.documentElement.removeEventListener('mousemove', doResize, false);
         document.documentElement.removeEventListener('mouseup', stopResize, false);
@@ -377,23 +351,20 @@ function makeElementResizable(el, resizer) {
     }
 }
 
-// --- 객체 이동 로직 ---
 function makeElementDraggable(elmnt) {
     let pos1=0, pos2=0, pos3=0, pos4=0;
     elmnt.onmousedown = dragMouseDown;
-
     function dragMouseDown(e) {
-        // 편집, 인풋, 앵커, 리사이저 클릭 시 드래그 방지
         if(e.target.isContentEditable || e.target.tagName==='INPUT') return;
         if(e.target.classList.contains('anchor')) return; 
         if(e.target.classList.contains('resize-handle')) return; 
+        if(e.target.classList.contains('delete-btn')) return; // 삭제 버튼 클릭시 드래그 방지
 
         e.preventDefault();
         pos3 = e.clientX; pos4 = e.clientY;
         document.onmouseup = closeDragElement;
         document.onmousemove = elementDrag;
     }
-
     function elementDrag(e) {
         e.preventDefault();
         pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
@@ -402,14 +373,12 @@ function makeElementDraggable(elmnt) {
         elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
         updateAllLines();
     }
-
     function closeDragElement() {
         document.onmouseup = null; document.onmousemove = null;
         updateAllLines();
     }
 }
 
-// --- 저장/로드 ---
 function saveData() {
     saveCurrentTabState();
     const a = document.createElement('a');

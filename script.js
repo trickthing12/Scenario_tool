@@ -2,26 +2,31 @@
 let appState = {
     title: "시나리오 제목",
     currentTabId: null,
-    tabs: [], // { id, name, objects: [], canvasWidth, canvasHeight }
+    tabs: [], 
     nextTabId: 0,
-    nextObjId: 0
+    nextObjId: 0,
+    nextLineId: 0
 };
 
+// 선 연결 관련 임시 변수
+let isDrawingLine = false;
+let startAnchor = null; // { objId, type }
+let tempLineElement = null;
+
 const canvas = document.getElementById('canvas');
+const svgLayer = document.getElementById('svg-layer');
 const tabContainer = document.getElementById('tab-container');
 const titleInput = document.getElementById('scenario-title');
 const viewport = document.getElementById('viewport');
 
 // 초기화
 window.onload = function() {
-    addTab(); // 기본 탭 생성
+    addTab();
     
-    // 제목 변경 감지
     titleInput.addEventListener('input', (e) => {
         appState.title = e.target.value;
     });
 
-    // 화살표 키로 캔버스 확장 및 스크롤
     window.addEventListener('keydown', (e) => {
         const step = 50;
         const currentW = parseInt(canvas.style.width);
@@ -30,16 +35,35 @@ window.onload = function() {
         if (e.key === 'ArrowRight') {
             canvas.style.width = (currentW + step) + 'px';
             viewport.scrollLeft += step;
-            saveCurrentTabState(); // 크기 변경 저장
+            saveCurrentTabState();
         } else if (e.key === 'ArrowDown') {
             canvas.style.height = (currentH + step) + 'px';
             viewport.scrollTop += step;
             saveCurrentTabState();
         }
     });
+
+    // 드래그 중인 선 업데이트 (마우스 이동)
+    document.addEventListener('mousemove', (e) => {
+        if (isDrawingLine && tempLineElement) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left + viewport.scrollLeft;
+            const y = e.clientY - rect.top + viewport.scrollTop;
+            
+            tempLineElement.setAttribute('x2', x);
+            tempLineElement.setAttribute('y2', y);
+        }
+    });
+
+    // 선 그리기 취소 (빈 곳에서 마우스 뗌)
+    document.addEventListener('mouseup', () => {
+        if (isDrawingLine) {
+            cancelLineDrawing();
+        }
+    });
 };
 
-// --- 탭(소제목) 관리 기능 ---
+// --- 탭 관리 ---
 function addTab(name = null) {
     const id = appState.nextTabId++;
     const tabName = name || `소제목 ${id + 1}`;
@@ -48,6 +72,7 @@ function addTab(name = null) {
         id: id,
         name: tabName,
         objects: [],
+        lines: [], // [추가] 선 정보 저장 배열
         canvasWidth: 2000,
         canvasHeight: 1000
     };
@@ -57,7 +82,6 @@ function addTab(name = null) {
 }
 
 function renderTabs() {
-    // 기존 탭 제거 (버튼 제외)
     const tabs = document.querySelectorAll('.tab');
     tabs.forEach(t => t.remove());
 
@@ -71,7 +95,7 @@ function renderTabs() {
         const input = document.createElement('input');
         input.value = tab.name;
         input.onchange = (e) => { tab.name = e.target.value; };
-        input.onclick = (e) => e.stopPropagation(); // 탭 전환 방지
+        input.onclick = (e) => e.stopPropagation();
 
         tabEl.appendChild(input);
         tabContainer.insertBefore(tabEl, addBtn);
@@ -79,25 +103,31 @@ function renderTabs() {
 }
 
 function switchTab(id) {
-    // 현재 탭 상태 저장
     if (appState.currentTabId !== null) {
         saveCurrentTabState();
     }
 
-    // 캔버스 초기화
     appState.currentTabId = id;
     const targetTab = appState.tabs.find(t => t.id === id);
     
-    // 캔버스 크기 복원
     canvas.style.width = targetTab.canvasWidth + 'px';
     canvas.style.height = targetTab.canvasHeight + 'px';
 
-    // 객체 모두 제거 후 재생성
+    // 기존 객체 및 선 제거
     document.querySelectorAll('.obj').forEach(el => el.remove());
+    svgLayer.innerHTML = ''; // 선 모두 제거
     
+    // 객체 복원
     targetTab.objects.forEach(objData => {
         createObjectElement(objData.type, objData.x, objData.y, objData);
     });
+
+    // 선 복원
+    if(targetTab.lines) {
+        targetTab.lines.forEach(lineData => {
+            createLineElement(lineData);
+        });
+    }
 
     renderTabs();
 }
@@ -109,7 +139,7 @@ function saveCurrentTabState() {
     currentTab.canvasWidth = parseInt(canvas.style.width);
     currentTab.canvasHeight = parseInt(canvas.style.height);
 
-    // 현재 DOM에 있는 모든 객체 정보를 state에 저장
+    // 객체 저장
     const currentObjects = [];
     document.querySelectorAll('.obj').forEach(el => {
         const data = {
@@ -117,8 +147,9 @@ function saveCurrentTabState() {
             type: el.dataset.type,
             x: el.style.left,
             y: el.style.top,
+            width: el.style.width,
+            height: el.style.height,
             content: el.querySelector('.obj-content')?.innerText || '',
-            // 타입별 추가 데이터
             bgColor: el.querySelector('.color-picker')?.value || '#ffffff',
             plotToggle: el.querySelector('.toggle-btn')?.classList.contains('active') || false,
             annotation: el.querySelector('.annotation')?.innerText || '',
@@ -127,23 +158,24 @@ function saveCurrentTabState() {
         currentObjects.push(data);
     });
     currentTab.objects = currentObjects;
+
+    // 선 정보는 이미 appState.tabs 안의 lines 배열에 실시간 업데이트 되지 않으므로
+    // 화면에 있는 선들을 기준으로 다시 저장해야 함 (삭제 등을 반영하기 위해)
+    // 하지만 여기서는 createLineElement 할 때 이미 lines 배열에 넣는 방식이 아니라,
+    // lines 배열을 기준으로 draw 하므로, lines 배열 자체를 관리해야 함.
+    // 편의상 lines 배열은 추가/삭제 시 직접 조작하고 있으므로 여기서는 패스.
 }
 
-// --- 드래그 앤 드롭 (메뉴 -> 캔버스 생성) ---
+// --- 드래그 앤 드롭 ---
 function dragStart(e, type) {
     e.dataTransfer.setData("type", type);
 }
-
-function allowDrop(e) {
-    e.preventDefault();
-}
-
+function allowDrop(e) { e.preventDefault(); }
 function drop(e) {
     e.preventDefault();
     const type = e.dataTransfer.getData("type");
-    if (!type) return; // 캔버스 내부 이동인 경우 무시
+    if (!type) return;
 
-    // 뷰포트 기준 좌표를 캔버스 기준 좌표로 변환
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left + viewport.scrollLeft;
     const y = e.clientY - rect.top + viewport.scrollTop;
@@ -151,27 +183,45 @@ function drop(e) {
     createObjectElement(type, x + 'px', y + 'px');
 }
 
-// --- 객체 생성 및 기능 구현 ---
+// --- 객체 생성 ---
 function createObjectElement(type, x, y, data = null) {
     const id = data ? data.id : `obj-${appState.nextObjId++}`;
     const el = document.createElement('div');
     el.className = `obj obj-${type}`;
     el.style.left = x;
     el.style.top = y;
+    if (data && data.width) el.style.width = data.width;
+    if (data && data.height) el.style.height = data.height;
+    
     el.dataset.type = type;
     el.dataset.id = id;
 
-    // 드래그 기능 (캔버스 내 이동)
+    // 드래그 기능
     makeElementDraggable(el);
 
-    // 공통: 텍스트 편집 영역
+    // [추가] 4방향 연결점(Anchor) 생성
+    ['top', 'bottom', 'left', 'right'].forEach(dir => {
+        const anchor = document.createElement('div');
+        anchor.className = `anchor ${dir}`;
+        anchor.dataset.dir = dir;
+        anchor.dataset.parentId = id;
+        
+        // 연결점 드래그 시작 이벤트
+        anchor.onmousedown = (e) => startLineDrawing(e, id, dir);
+        // 연결점 드래그 종료(연결) 이벤트
+        anchor.onmouseup = (e) => finishLineDrawing(e, id, dir);
+        
+        el.appendChild(anchor);
+    });
+
+    // 내용 생성 (기존과 동일)
     const content = document.createElement('div');
     content.className = 'obj-content';
     content.contentEditable = true;
     content.innerText = data ? data.content : (type === 'title' ? '제목' : type === 'plot' ? '플롯' : type === 'char' ? '캐릭터' : '설명');
     el.appendChild(content);
 
-    // 타입별 특수 기능
+    // 타입별 기능 (기존 코드 유지)
     if (type === 'title') {
         const colorPicker = document.createElement('input');
         colorPicker.type = 'color';
@@ -180,34 +230,23 @@ function createObjectElement(type, x, y, data = null) {
         colorPicker.oninput = (e) => { el.style.backgroundColor = e.target.value; };
         el.style.backgroundColor = colorPicker.value;
         el.appendChild(colorPicker);
-    }
-    else if (type === 'plot') {
+    } else if (type === 'plot') {
         const header = document.createElement('div');
         header.className = 'plot-header';
-        
-        // 토글 버튼 (우측 배치)
         const btn = document.createElement('div');
         btn.className = `toggle-btn ${data && data.plotToggle ? 'active' : ''}`;
         btn.onclick = () => btn.classList.toggle('active');
-        
-        // 구조 변경: content 옆에 버튼 배치
         content.style.width = '80%';
-        header.appendChild(content); 
-        header.appendChild(btn);
-        el.innerHTML = ''; // 초기화
-        el.appendChild(header);
-
-        // 주석
+        header.appendChild(content); header.appendChild(btn);
+        el.innerHTML = ''; el.appendChild(header);
         const annotation = document.createElement('div');
         annotation.className = 'annotation';
         annotation.contentEditable = true;
         annotation.innerText = data ? data.annotation : '주석 입력...';
         el.appendChild(annotation);
-    }
-    else if (type === 'char') {
+    } else if (type === 'char') {
         const imgArea = document.createElement('div');
         imgArea.className = 'char-img-area';
-        
         if (data && data.imgSrc) {
             const img = document.createElement('img');
             img.src = data.imgSrc;
@@ -218,13 +257,10 @@ function createObjectElement(type, x, y, data = null) {
             ph.innerText = 'Click to Upload';
             imgArea.appendChild(ph);
         }
-
-        // 이미지 업로드 로직
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = 'image/png, image/jpeg';
         fileInput.style.display = 'none';
-        
         fileInput.onchange = (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -232,29 +268,190 @@ function createObjectElement(type, x, y, data = null) {
                 reader.onload = (readerEvent) => {
                     imgArea.innerHTML = '';
                     const newImg = document.createElement('img');
-                    newImg.src = readerEvent.target.result; // Base64 저장
+                    newImg.src = readerEvent.target.result;
                     imgArea.appendChild(newImg);
                 };
                 reader.readAsDataURL(file);
             }
         };
-
         imgArea.onclick = () => fileInput.click();
-        el.appendChild(imgArea);
-        el.appendChild(fileInput);
+        el.appendChild(imgArea); el.appendChild(fileInput);
+    } else {
+        // desc 등 추가 타입
+    }
+
+    // 4방향 앵커를 다시 append (innerHTML 초기화 시 날아가는 것 방지 위해 마지막에 재확인)
+    if(type === 'plot') {
+        ['top', 'bottom', 'left', 'right'].forEach(dir => {
+            const anchor = document.createElement('div');
+            anchor.className = `anchor ${dir}`;
+            anchor.dataset.dir = dir;
+            anchor.dataset.parentId = id;
+            anchor.onmousedown = (e) => startLineDrawing(e, id, dir);
+            anchor.onmouseup = (e) => finishLineDrawing(e, id, dir);
+            el.appendChild(anchor);
+        });
     }
 
     canvas.appendChild(el);
 }
 
-// --- 객체 이동 로직 (캔버스 내부) ---
+// --- 선 연결 기능 ---
+
+// 1. 선 그리기 시작
+function startLineDrawing(e, objId, dir) {
+    e.stopPropagation(); // 객체 드래그 방지
+    isDrawingLine = true;
+    startAnchor = { objId, dir };
+
+    // 시작점 좌표 계산
+    const p = getAnchorPosition(objId, dir);
+    
+    // 임시 선 생성 (SVG Line)
+    tempLineElement = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    tempLineElement.setAttribute("x1", p.x);
+    tempLineElement.setAttribute("y1", p.y);
+    tempLineElement.setAttribute("x2", p.x); // 처음엔 점
+    tempLineElement.setAttribute("y2", p.y);
+    tempLineElement.setAttribute("stroke", "orange");
+    tempLineElement.setAttribute("stroke-width", "3");
+    tempLineElement.setAttribute("stroke-dasharray", "5,5"); // 드래그 중엔 점선 느낌
+    svgLayer.appendChild(tempLineElement);
+}
+
+// 2. 선 그리기 완료 (다른 앵커 위에서 마우스 뗌)
+function finishLineDrawing(e, targetObjId, targetDir) {
+    if (!isDrawingLine) return;
+    e.stopPropagation();
+
+    // 자기 자신에게 연결 방지 (선택 사항)
+    if (startAnchor.objId === targetObjId) {
+        cancelLineDrawing();
+        return;
+    }
+
+    // 데이터 생성
+    const newLineData = {
+        id: `line-${appState.nextLineId++}`,
+        start: startAnchor.objId,
+        startDir: startAnchor.dir,
+        end: targetObjId,
+        endDir: targetDir,
+        dashed: false
+    };
+
+    // 현재 탭의 선 목록에 추가
+    const currentTab = appState.tabs.find(t => t.id === appState.currentTabId);
+    if (!currentTab.lines) currentTab.lines = [];
+    currentTab.lines.push(newLineData);
+
+    // 실제 선 그리기
+    createLineElement(newLineData);
+    
+    cancelLineDrawing(); // 임시 선 제거
+}
+
+// 3. 선 그리기 취소
+function cancelLineDrawing() {
+    isDrawingLine = false;
+    startAnchor = null;
+    if (tempLineElement) {
+        tempLineElement.remove();
+        tempLineElement = null;
+    }
+}
+
+// 4. 선 요소(SVG) 생성 및 기능 부착
+function createLineElement(lineData) {
+    const p1 = getAnchorPosition(lineData.start, lineData.startDir);
+    const p2 = getAnchorPosition(lineData.end, lineData.endDir);
+    if (!p1 || !p2) return; // 객체가 없으면 패스
+
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("id", lineData.id);
+    line.setAttribute("x1", p1.x);
+    line.setAttribute("y1", p1.y);
+    line.setAttribute("x2", p2.x);
+    line.setAttribute("y2", p2.y);
+    line.setAttribute("class", "connection-line" + (lineData.dashed ? " dashed" : ""));
+    
+    // 클릭 시 점선/실선 토글
+    line.onclick = () => {
+        lineData.dashed = !lineData.dashed;
+        if (lineData.dashed) line.classList.add('dashed');
+        else line.classList.remove('dashed');
+    };
+
+    // 우클릭 시 삭제 (옵션)
+    line.oncontextmenu = (e) => {
+        e.preventDefault();
+        if(confirm('선을 삭제하시겠습니까?')) {
+            line.remove();
+            const currentTab = appState.tabs.find(t => t.id === appState.currentTabId);
+            currentTab.lines = currentTab.lines.filter(l => l.id !== lineData.id);
+        }
+    };
+
+    svgLayer.appendChild(line);
+}
+
+// 5. 앵커의 절대 좌표 계산 함수
+function getAnchorPosition(objId, dir) {
+    const el = document.querySelector(`.obj[data-id="${objId}"]`);
+    if (!el) return null;
+
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const left = el.offsetLeft;
+    const top = el.offsetTop;
+
+    let x = 0, y = 0;
+    if (dir === 'top') { x = left + w / 2; y = top; }
+    else if (dir === 'bottom') { x = left + w / 2; y = top + h; }
+    else if (dir === 'left') { x = left; y = top + h / 2; }
+    else if (dir === 'right') { x = left + w; y = top + h / 2; }
+    
+    return { x, y };
+}
+
+// 6. 모든 선 업데이트 (객체 이동/리사이즈 시 호출)
+function updateAllLines() {
+    const currentTab = appState.tabs.find(t => t.id === appState.currentTabId);
+    if (!currentTab || !currentTab.lines) return;
+
+    currentTab.lines.forEach(lineData => {
+        const lineEl = document.getElementById(lineData.id);
+        if (lineEl) {
+            const p1 = getAnchorPosition(lineData.start, lineData.startDir);
+            const p2 = getAnchorPosition(lineData.end, lineData.endDir);
+            if (p1 && p2) {
+                lineEl.setAttribute("x1", p1.x);
+                lineEl.setAttribute("y1", p1.y);
+                lineEl.setAttribute("x2", p2.x);
+                lineEl.setAttribute("y2", p2.y);
+            }
+        }
+    });
+}
+
+
+// --- 객체 이동 로직 ---
 function makeElementDraggable(elmnt) {
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    
     elmnt.onmousedown = dragMouseDown;
 
     function dragMouseDown(e) {
-        if(e.target.isContentEditable || e.target.tagName === 'INPUT') return; 
+        if(e.target.isContentEditable || e.target.tagName === 'INPUT') return;
+        if (e.target.classList.contains('anchor')) return; // 앵커 클릭은 드래그 X
+
+        const rect = elmnt.getBoundingClientRect();
+        if (e.clientX > rect.right - 20 && e.clientY > rect.bottom - 20) {
+            // 리사이즈 중에도 선 업데이트 필요
+            document.onmouseup = closeDragElement;
+            document.onmousemove = elementResize; // 리사이즈용 핸들러 연결
+            return;
+        }
+
         e.preventDefault();
         pos3 = e.clientX;
         pos4 = e.clientY;
@@ -270,17 +467,27 @@ function makeElementDraggable(elmnt) {
         pos4 = e.clientY;
         elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
         elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+        
+        updateAllLines(); // [추가] 이동 시 선 따라오기
+    }
+    
+    function elementResize(e) {
+        // 브라우저 기본 리사이즈 이벤트는 JS로 제어하기 어려우므로, 
+        // 단순히 마우스 움직일 때마다 선 업데이트를 호출
+        updateAllLines();
     }
 
     function closeDragElement() {
         document.onmouseup = null;
         document.onmousemove = null;
+        updateAllLines(); // 최종 위치에서 한번 더 업데이트
     }
 }
 
+
 // --- 저장 및 불러오기 ---
 function saveData() {
-    saveCurrentTabState(); // 현재 작업중인 내용 반영
+    saveCurrentTabState();
     const dataStr = JSON.stringify(appState);
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -306,9 +513,8 @@ function loadData(input) {
             const loadedState = JSON.parse(e.target.result);
             appState = loadedState;
             
-            // UI 업데이트
             titleInput.value = appState.title;
-            appState.currentTabId = null; // 강제 갱신을 위해 초기화
+            appState.currentTabId = null;
             renderTabs();
             if(appState.tabs.length > 0) {
                 switchTab(appState.tabs[0].id);

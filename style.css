@@ -1,329 +1,118 @@
-function uuid() { return 'xxxx-xxxx-xxxx-xxxx'.replace(/[x]/g, () => (Math.random()*16|0).toString(16)); }
+/* --- 초기화 및 레이아웃 --- */
+* { box-sizing: border-box; user-select: none; }
+body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: 'Malgun Gothic', sans-serif; }
 
-const workspace = document.getElementById('workspace');
-const timelineContainer = document.getElementById('timeline-container');
-const svgLayer = document.getElementById('svg-layer');
-const titleInput = document.getElementById('scenario-title');
-const zoomIndicator = document.getElementById('zoom-indicator');
-
-let lines = []; 
-let activeAnchor = null;
-let draggedType = null;
-let scale = 1; 
-
-titleInput.addEventListener('input', (e) => document.title = e.target.value || "Scenario Planner");
-
-document.getElementById('extend-btn').addEventListener('click', () => {
-    timelineContainer.style.width = (timelineContainer.offsetWidth + 1000) + 'px';
-    updateAllLines();
-});
-
-// --- 3. 줌 (확대/축소) 로직 수정 ---
-workspace.addEventListener('wheel', (e) => {
-    // Shift 키를 누른 상태면 가로 스크롤 허용 (편의 기능)
-    if (e.shiftKey) return; 
-
-    // 그 외에는 무조건 줌 동작 수행 (Ctrl 키 필요 없음)
-    e.preventDefault(); 
-    const zoomStep = 0.1;
-
-    if (e.deltaY < 0) {
-        scale = Math.min(scale + zoomStep, 5); // 최대 5배
-    } else {
-        scale = Math.max(scale - zoomStep, 0.5); // 최소 0.5배
-    }
-    
-    timelineContainer.style.transform = `scale(${scale})`;
-    zoomIndicator.innerText = `${Math.round(scale * 100)}%`;
-}, { passive: false });
-
-// --- 드래그 앤 드롭 ---
-document.querySelectorAll('.draggable-item').forEach(item => {
-    item.addEventListener('dragstart', (e) => draggedType = e.target.getAttribute('data-type'));
-});
-
-workspace.addEventListener('dragover', (e) => e.preventDefault());
-workspace.addEventListener('drop', (e) => {
-    e.preventDefault();
-    if (!draggedType) return;
-    
-    const rect = timelineContainer.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
-    
-    createObject({ type: draggedType, x, y });
-    draggedType = null;
-});
-
-// --- 객체 생성 ---
-function createObject(params) {
-    const id = params.id || uuid();
-    const el = document.createElement('div');
-    el.id = id;
-    el.classList.add('placed-object');
-    el.dataset.type = params.type;
-    el.style.left = params.x + 'px';
-    el.style.top = params.y + 'px';
-    
-    let defaultText = "Text";
-    let defaultColor = "#ffffff";
-
-    if (params.type === 'title') {
-        el.classList.add('obj-title');
-        defaultText = "TITLE";
-        defaultColor = "#000000";
-    } else if (params.type === 'incident') {
-        el.classList.add('obj-incident');
-        defaultText = "사건 내용";
-        defaultColor = "#ffffff";
-    } else if (params.type === 'char') {
-        el.classList.add('obj-char');
-        defaultText = "캐릭터명";
-        defaultColor = "#e3f2fd";
-    } else if (params.type === 'memo') {
-        el.classList.add('obj-memo');
-        defaultText = "메모...";
-        defaultColor = "#fff9c4";
-        if(params.width) el.style.width = params.width;
-        if(params.height) el.style.height = params.height;
-    }
-
-    const header = document.createElement('div');
-    header.classList.add('obj-header');
-    
-    const span = document.createElement('span');
-    span.classList.add('editable-text');
-    span.innerText = params.text || defaultText;
-    span.contentEditable = true;
-    header.appendChild(span);
-
-    const controls = document.createElement('div');
-    controls.style.display = 'flex';
-    controls.style.gap = '5px';
-    controls.style.alignItems = 'center';
-
-    if (params.type === 'incident') {
-        const baitBtn = document.createElement('div');
-        baitBtn.classList.add('bait-marker');
-        baitBtn.innerText = "?";
-        if (params.isBait) { baitBtn.classList.add('active'); baitBtn.innerText = "!"; }
-        baitBtn.onclick = (e) => {
-            e.stopPropagation();
-            baitBtn.classList.toggle('active');
-            baitBtn.innerText = baitBtn.classList.contains('active') ? "!" : "?";
-        };
-        controls.appendChild(baitBtn);
-    }
-
-    const colorInput = document.createElement('input');
-    colorInput.type = "color";
-    colorInput.classList.add('color-picker');
-    colorInput.value = params.color || defaultColor;
-    colorInput.addEventListener('input', (e) => applyColor(el, params.type, e.target.value));
-    controls.appendChild(colorInput);
-
-    header.appendChild(controls);
-    el.appendChild(header);
-    
-    applyColor(el, params.type, colorInput.value);
-
-    ['top', 'bottom', 'left', 'right'].forEach(pos => {
-        const anchor = document.createElement('div');
-        anchor.classList.add('anchor', pos);
-        anchor.dataset.pos = pos;
-        anchor.dataset.parentId = id;
-        anchor.onclick = (e) => handleAnchorClick(e, anchor);
-        el.appendChild(anchor);
-    });
-
-    makeElementDraggable(el);
-    timelineContainer.appendChild(el);
+/* --- 상단 고정 헤더 --- */
+#header-area {
+    position: fixed; top: 0; left: 0; width: 100%; z-index: 1000;
+    background-color: #d3d3d3; border-bottom: 2px solid #000;
+    display: flex; flex-direction: column;
 }
 
-function applyColor(el, type, color) {
-    if (type === 'title') el.querySelector('.editable-text').style.color = color;
-    else if (type === 'incident') el.style.borderLeftColor = color;
-    else el.style.backgroundColor = color;
+/* 1단: 제목 및 저장 버튼 */
+.top-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px; height: 60px;
+}
+#scenario-title {
+    font-size: 24px; font-weight: bold; background: transparent; border: none;
+    outline: none; width: 60%; cursor: text;
+}
+#scenario-title:hover { background: rgba(255,255,255,0.5); }
+
+.btn-group button {
+    padding: 5px 15px; font-size: 14px; cursor: pointer;
+    background: #fff; border: 1px solid #000; margin-left: 5px;
+}
+.btn-group button:hover { background: #eee; }
+
+/* 2단: 탭 (소제목) */
+.tab-bar {
+    display: flex; align-items: flex-end; padding-left: 10px; height: 40px;
+    background: #e0e0e0; border-top: 1px solid #999;
+}
+.tab {
+    padding: 8px 15px; border: 1px solid #999; border-bottom: none;
+    background: #f0f0f0; margin-right: 2px; cursor: pointer;
+    border-radius: 5px 5px 0 0; min-width: 80px; text-align: center;
+}
+.tab.active { background: #fff; font-weight: bold; border-bottom: 1px solid #fff; }
+.tab input { border: none; background: transparent; width: 80px; text-align: center; outline: none; }
+.add-tab-btn {
+    padding: 5px 10px; font-weight: bold; cursor: pointer; font-size: 18px;
+    background: transparent; border: none;
+}
+.add-tab-btn:hover { color: blue; }
+
+/* --- 메인 캔버스 영역 --- */
+#viewport {
+    position: absolute; top: 100px; left: 0; right: 0; bottom: 0;
+    overflow: auto; background-color: #fff;
+}
+#canvas {
+    position: relative; width: 2000px; height: 1000px; /* 초기 크기 */
+    background-image: radial-gradient(#ddd 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+/* 중앙 타임라인 선 */
+#main-line {
+    position: absolute; top: 50%; left: 0; width: 100%; height: 2px;
+    background-color: #000; z-index: 0;
 }
 
-function handleAnchorClick(e, anchor) {
-    e.stopPropagation();
-    if (activeAnchor) {
-        if (activeAnchor !== anchor) {
-            createLine(activeAnchor, anchor);
-            activeAnchor.classList.remove('active');
-            activeAnchor = null;
-        }
-    } else {
-        activeAnchor = anchor;
-        activeAnchor.classList.add('active');
-    }
+/* --- 플로팅 메뉴 (햄버거) --- */
+#menu-container {
+    position: fixed; top: 110px; right: 20px; z-index: 900;
+}
+#menu-btn {
+    width: 80px; height: 40px; background: #e0e6eb; border: 2px solid #000;
+    display: flex; justify-content: center; align-items: center;
+    font-size: 16px; cursor: pointer; font-weight: bold;
+}
+#menu-items {
+    display: none; flex-direction: column; background: #fff; 
+    border: 2px solid #000; margin-top: 5px; padding: 10px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+#menu-container:hover #menu-items { display: flex; }
+
+.draggable-source {
+    padding: 8px; margin: 5px 0; border: 1px dashed #666; 
+    background: #f9f9f9; cursor: grab; text-align: center;
 }
 
-function createLine(startAnchor, endAnchor, existingData = null) {
-    const lineId = existingData ? existingData.id : uuid();
-    const lineData = existingData || {
-        id: lineId,
-        from: startAnchor.dataset.parentId,
-        fromPos: startAnchor.dataset.pos,
-        to: endAnchor.dataset.parentId,
-        toPos: endAnchor.dataset.pos,
-        style: 'solid',
-        text: ''
-    };
-    if (!existingData) lines.push(lineData);
+/* --- 캔버스 위 객체들 공통 --- */
+.obj {
+    position: absolute; min-width: 120px; padding: 10px;
+    background: #fff; border: 1px solid #000; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    cursor: move; z-index: 10; display: flex; flex-direction: column; gap: 5px;
+}
+.obj:active { box-shadow: 4px 4px 10px rgba(0,0,0,0.3); z-index: 100; }
+.obj-content { outline: none; min-height: 20px; cursor: text; }
 
-    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    g.id = lineId;
-    
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.classList.add('connection-line');
-    if (lineData.style === 'dashed') path.style.strokeDasharray = "5,5";
-    
-    path.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const newText = prompt("선 텍스트 (취소 시 점선/실선 토글):", lineData.text);
-        if (newText !== null) lineData.text = newText;
-        else lineData.style = lineData.style === 'solid' ? 'dashed' : 'solid';
-        updateLineVisual(lineId);
-    });
+/* 1. 제목 객체 */
+.obj-title { border: 2px solid #333; font-weight: bold; text-align: center; }
+.color-picker { width: 100%; height: 5px; border: none; padding: 0; margin-top: 5px; cursor: pointer;}
 
-    const textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    textEl.classList.add('line-text');
-    textEl.textContent = lineData.text;
-
-    g.appendChild(path);
-    g.appendChild(textEl);
-    svgLayer.appendChild(g);
-    updateSingleLine(lineData);
+/* 2. 사건/사고(플롯) 객체 */
+.obj-plot { border-left: 5px solid #000; }
+.plot-header { display: flex; justify-content: space-between; align-items: center; }
+.toggle-btn { 
+    width: 20px; height: 20px; background: red; border: 1px solid #333; 
+    border-radius: 50%; cursor: pointer; 
+}
+.toggle-btn.active { background: lime; }
+.annotation { 
+    font-size: 0.8em; color: #666; border-top: 1px dotted #ccc; 
+    margin-top: 5px; padding-top: 5px; min-height: 20px; 
 }
 
-function updateSingleLine(lineData) {
-    const elFrom = document.getElementById(lineData.from);
-    const elTo = document.getElementById(lineData.to);
-    if (!elFrom || !elTo) return;
-
-    const p1 = getAnchorPos(elFrom, lineData.fromPos);
-    const p2 = getAnchorPos(elTo, lineData.toPos);
-    
-    const g = document.getElementById(lineData.id);
-    if (!g) return;
-    const path = g.querySelector('path');
-    const text = g.querySelector('text');
-
-    const dx = Math.abs(p1.x - p2.x) * 0.5;
-    const d = `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}`;
-    
-    path.setAttribute("d", d);
-    path.style.strokeDasharray = lineData.style === 'dashed' ? "5,5" : "none";
-    text.setAttribute("x", (p1.x + p2.x) / 2);
-    text.setAttribute("y", (p1.y + p2.y) / 2 - 5);
-    text.textContent = lineData.text;
+/* 3. 캐릭터 객체 */
+.obj-char { border-radius: 10px; overflow: hidden; }
+.char-img-area { 
+    width: 100%; min-height: 50px; background: #eee; 
+    display: flex; justify-content: center; align-items: center; cursor: pointer;
+    overflow: hidden;
 }
-
-function updateAllLines() { lines.forEach(updateSingleLine); }
-
-function getAnchorPos(el, pos) {
-    const left = el.offsetLeft;
-    const top = el.offsetTop;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    if (pos === 'top') return { x: left + w/2, y: top };
-    if (pos === 'bottom') return { x: left + w/2, y: top + h };
-    if (pos === 'left') return { x: left, y: top + h/2 };
-    if (pos === 'right') return { x: left + w, y: top + h/2 };
-    return { x: left, y: top };
-}
-
-function updateLineVisual(lineId) {
-    const l = lines.find(x => x.id === lineId);
-    if(l) updateSingleLine(l);
-}
-
-function makeElementDraggable(elmnt) {
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    
-    elmnt.onmousedown = (e) => {
-        if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.classList.contains('anchor') || e.target.classList.contains('bait-marker')) return;
-        e.preventDefault();
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        document.onmouseup = closeDragElement;
-        document.onmousemove = elementDrag;
-        elmnt.style.zIndex = 100;
-    };
-
-    function elementDrag(e) {
-        e.preventDefault();
-        const deltaX = (e.clientX - pos3) / scale;
-        const deltaY = (e.clientY - pos4) / scale;
-        
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-
-        elmnt.style.top = (elmnt.offsetTop + deltaY) + "px";
-        elmnt.style.left = (elmnt.offsetLeft + deltaX) + "px";
-        updateAllLines();
-    }
-
-    function closeDragElement() {
-        document.onmouseup = null;
-        document.onmousemove = null;
-        elmnt.style.zIndex = 10;
-    }
-}
-
-function saveScenario() {
-    const title = titleInput.value || "MyScenario";
-    const objects = [];
-    document.querySelectorAll('.placed-object').forEach(obj => {
-        objects.push({
-            id: obj.id, type: obj.dataset.type,
-            left: parseFloat(obj.style.left), top: parseFloat(obj.style.top),
-            text: obj.querySelector('.editable-text').innerText,
-            color: obj.querySelector('.color-picker').value,
-            isBait: obj.querySelector('.bait-marker')?.classList.contains('active') || false,
-            width: obj.style.width, height: obj.style.height
-        });
-    });
-
-    const data = { title, width: timelineContainer.style.width, objects, lines };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${title}.json`;
-    link.click();
-}
-
-function loadScenario(input) {
-    const file = input.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            titleInput.value = data.title || "";
-            timelineContainer.style.width = data.width || "3000px";
-            
-            document.querySelectorAll('.placed-object').forEach(el => el.remove());
-            svgLayer.innerHTML = '';
-            lines = [];
-
-            data.objects.forEach(item => createObject({
-                id: item.id, type: item.type, x: item.left, y: item.top, 
-                text: item.text, color: item.color, isBait: item.isBait, 
-                width: item.width, height: item.height
-            }));
-
-            if (data.lines) {
-                data.lines.forEach(line => {
-                   const f = document.getElementById(line.from);
-                   const t = document.getElementById(line.to);
-                   if(f && t) createLine(f.querySelector(`.anchor.${line.fromPos}`), t.querySelector(`.anchor.${line.toPos}`), line);
-                });
-            }
-        } catch (err) { alert("오류: " + err); }
-    };
-    reader.readAsText(file);
-    input.value = '';
-}
+.char-img-area img { width: 100%; height: auto; display: block; }
+.char-placeholder { font-size: 10px; color: #999; }

@@ -8,9 +8,11 @@ let appState = {
     nextLineId: 0
 };
 
+// 상호작용 관련 변수
 let isDrawingLine = false;
 let startAnchor = null;
 let tempPathElement = null;
+let hoveredObjectId = null; // [추가] 현재 마우스가 올라간 객체 ID
 
 const canvas = document.getElementById('canvas');
 const svgLayer = document.getElementById('svg-layer');
@@ -22,7 +24,19 @@ window.onload = function() {
     addTab();
     titleInput.addEventListener('input', (e) => { appState.title = e.target.value; });
 
+    // 1. 화살표 키: 캔버스 확장
+    // 2. Delete 키: 호버된 객체 삭제
     window.addEventListener('keydown', (e) => {
+        // [추가] Delete 키 삭제 로직
+        if (e.key === 'Delete' && hoveredObjectId) {
+            // 텍스트 편집 중이거나 인풋 입력 중일 때는 삭제 방지
+            if (document.activeElement.isContentEditable || document.activeElement.tagName === 'INPUT') {
+                return;
+            }
+            
+            deleteObject(hoveredObjectId);
+        }
+
         const step = 50;
         const currentW = parseInt(canvas.style.width);
         const currentH = parseInt(canvas.style.height);
@@ -43,13 +57,34 @@ window.onload = function() {
             const mouseX = e.clientX - rect.left + viewport.scrollLeft;
             const mouseY = e.clientY - rect.top + viewport.scrollTop;
             const startPos = getAnchorPosition(startAnchor.objId, startAnchor.dir);
-            // 드래그 중에는 직선으로 표시
             tempPathElement.setAttribute('d', `M ${startPos.x} ${startPos.y} L ${mouseX} ${mouseY}`);
         }
     });
 
     document.addEventListener('mouseup', () => { if (isDrawingLine) cancelLineDrawing(); });
 };
+
+// --- [추가] 객체 삭제 함수 ---
+function deleteObject(objId) {
+    if(!confirm('이 객체를 삭제하시겠습니까?')) return;
+
+    // DOM 제거
+    const el = document.querySelector(`.obj[data-id="${objId}"]`);
+    if (el) el.remove();
+
+    // 데이터 및 선 정리
+    const curTab = appState.tabs.find(t => t.id === appState.currentTabId);
+    
+    // 선 제거
+    if(curTab.lines) {
+        curTab.lines = curTab.lines.filter(l => l.start !== objId && l.end !== objId);
+        svgLayer.innerHTML = ''; 
+        curTab.lines.forEach(l => createLineElement(l));
+    }
+    
+    hoveredObjectId = null; // 삭제했으므로 초기화
+}
+
 
 // --- 탭 관리 ---
 function addTab(name = null) {
@@ -118,7 +153,7 @@ function saveCurrentTabState() {
     currentTab.objects = currentObjects;
 }
 
-// --- 객체 생성 (삭제 기능 포함) ---
+// --- 객체 생성 ---
 function createObjectElement(type, x, y, data = null) {
     const id = data ? data.id : `obj-${appState.nextObjId++}`;
     const el = document.createElement('div');
@@ -128,44 +163,21 @@ function createObjectElement(type, x, y, data = null) {
     if (data && data.height) el.style.height = data.height;
     el.dataset.type = type; el.dataset.id = id;
 
+    // [추가] 마우스 호버 상태 추적
+    el.onmouseenter = () => { hoveredObjectId = id; };
+    el.onmouseleave = () => { if(hoveredObjectId === id) hoveredObjectId = null; };
+
     makeElementDraggable(el);
 
-    // 1. 리사이즈 핸들
+    // 리사이즈 핸들
     const resizer = document.createElement('div');
     resizer.className = 'resize-handle';
     makeElementResizable(el, resizer);
     el.appendChild(resizer);
 
-    // [추가] 2. 삭제 버튼 (오른쪽 상단)
-    const delBtn = document.createElement('div');
-    delBtn.className = 'delete-btn';
-    delBtn.innerText = 'X';
-    delBtn.onclick = (e) => {
-        e.stopPropagation(); // 드래그 방지
-        if(confirm('이 객체를 삭제하시겠습니까?')) {
-            // DOM 제거
-            el.remove();
-            
-            // 데이터(State) 및 관련 선(Line) 제거
-            const curTab = appState.tabs.find(t => t.id === appState.currentTabId);
-            
-            // 객체 목록에서 제거
-            // (saveCurrentTabState가 호출되지 않은 상태일 수 있으므로 여기서 바로 제거하지는 않고, 
-            //  다음에 저장할 때 화면에 없는 건 자동 삭제되지만, 선은 명시적으로 지워야 함)
-            
-            // 연결된 선 제거 (start나 end가 이 객체인 경우)
-            if(curTab.lines) {
-                curTab.lines = curTab.lines.filter(l => l.start !== id && l.end !== id);
-                
-                // 화면의 선 다시 그리기
-                svgLayer.innerHTML = ''; 
-                curTab.lines.forEach(l => createLineElement(l));
-            }
-        }
-    };
-    el.appendChild(delBtn);
+    // (이전 삭제 버튼 생성 코드는 제거됨)
 
-    // 3. 앵커 생성
+    // 앵커 생성
     ['top', 'bottom', 'left', 'right'].forEach(dir => {
         const anchor = document.createElement('div');
         anchor.className = `anchor ${dir}`;
@@ -174,7 +186,7 @@ function createObjectElement(type, x, y, data = null) {
         el.appendChild(anchor);
     });
 
-    // 4. 내용물
+    // 내용물
     const content = document.createElement('div');
     content.className = 'obj-content';
     content.contentEditable = true;
@@ -224,7 +236,7 @@ function createObjectElement(type, x, y, data = null) {
     canvas.appendChild(el);
 }
 
-// --- 선 기능 (직각 경로 + 삭제) ---
+// --- 선 기능 ---
 function startLineDrawing(e, objId, dir) {
     e.stopPropagation(); isDrawingLine = true; startAnchor = { objId, dir };
     const p = getAnchorPosition(objId, dir);
@@ -281,7 +293,7 @@ function getElbowPath(start, end, startDir, endDir) {
 function createLineElement(lineData) {
     const p1 = getAnchorPosition(lineData.start, lineData.startDir);
     const p2 = getAnchorPosition(lineData.end, lineData.endDir);
-    if (!p1 || !p2) return; // 연결된 객체가 없으면 그리지 않음
+    if (!p1 || !p2) return; 
 
     const pathD = getElbowPath(p1, p2, lineData.startDir, lineData.endDir);
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -358,7 +370,6 @@ function makeElementDraggable(elmnt) {
         if(e.target.isContentEditable || e.target.tagName==='INPUT') return;
         if(e.target.classList.contains('anchor')) return; 
         if(e.target.classList.contains('resize-handle')) return; 
-        if(e.target.classList.contains('delete-btn')) return; // 삭제 버튼 클릭시 드래그 방지
 
         e.preventDefault();
         pos3 = e.clientX; pos4 = e.clientY;

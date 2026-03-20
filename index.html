@@ -365,9 +365,33 @@
             reader.onload = function(e) {
                 try {
                     const data = JSON.parse(e.target.result);
-                    editor.import(data);
-                    setTimeout(updateNodeColors, 100);
-                } catch (error) { alert("잘못된 JSON 파일 포맷입니다."); }
+                    editor.import(data); // 데이터 불러오기 및 노드 생성
+                    
+                    setTimeout(() => {
+                        // 1. 관계 카드 배경색 복원
+                        updateNodeColors();
+                        
+                        // 🔥 2. 캐릭터 카드 이미지 강제 복원 로직 추가
+                        const nodes = editor.drawflow.drawflow.Home.data;
+                        for (let key in nodes) {
+                            const node = nodes[key];
+                            // 캐릭터 카드인 경우에만 실행
+                            if (node.name === 'character') {
+                                const savedImg = node.data.imgSrc;
+                                const domNode = document.getElementById("node-" + key);
+                                if (domNode && savedImg) {
+                                    const imgElement = domNode.querySelector('.img-container img');
+                                    if (imgElement) {
+                                        imgElement.src = savedImg; // 저장된 이미지를 화면에 덮어쓰기
+                                    }
+                                }
+                            }
+                        }
+                    }, 100); // 화면에 노드가 완전히 그려진 직후(0.1초 후)에 실행
+                    
+                } catch (error) { 
+                    alert("잘못된 JSON 파일 포맷입니다."); 
+                }
             };
             reader.readAsText(file);
             event.target.value = '';

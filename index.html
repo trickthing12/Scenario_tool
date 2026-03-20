@@ -3,41 +3,375 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scenario Planning Tool</title>
-    <link rel="stylesheet" href="style.css">
+    <title>캐릭터 시나리오 맵 에디터</title>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        /* 라이트/다크 모드 테마 설정 */
+        :root {
+            --bg-color: #f9f9f9;
+            --grid-color: #d1d1d1;
+            --sidebar-bg: #2c3e50;
+            --node-bg: #ffffff; 
+            --border-color: #cacaca;
+            --text-color: #333333;
+            --input-bg: #ffffff;
+            --input-border: #eeeeee;
+        }
+
+        body.dark-mode {
+            --bg-color: #1e1e1e;
+            --grid-color: #333333;
+            --sidebar-bg: #111111;
+            --node-bg: #2d2d2d;
+            --border-color: #444444;
+            --text-color: #eeeeee;
+            --input-bg: #3d3d3d;
+            --input-border: #555555;
+        }
+
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; color: var(--text-color); }
+        
+        /* 왼쪽 컨트롤 패널 */
+        #sidebar { width: 250px; background-color: var(--sidebar-bg); color: white; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; z-index: 10; }
+        #sidebar h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #4a6278; padding-bottom: 10px; }
+        .btn { background-color: #34495e; color: white; border: 1px solid #4a6278; padding: 12px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-size: 14px; font-weight: bold; }
+        .btn:hover { background-color: #4a6278; }
+        .btn-primary { background-color: #3498db; border-color: #2980b9; }
+        .btn-primary:hover { background-color: #2980b9; }
+        .btn-secondary { background-color: #9b59b6; border-color: #8e44ad; }
+        .btn-secondary:hover { background-color: #8e44ad; }
+        .btn-action { background-color: #f39c12; border-color: #e67e22; }
+        .btn-action:hover { background-color: #e67e22; }
+        .btn-success { background-color: #27ae60; border-color: #2ecc71; }
+        .btn-success:hover { background-color: #2ecc71; }
+
+        .zoom-controls { display: flex; justify-content: space-between; gap: 5px; }
+        .zoom-controls .btn { flex: 1; padding: 8px; font-size: 12px; }
+
+        /* 오른쪽 캔버스 영역 */
+        #drawflow { flex-grow: 1; background-color: var(--bg-color); background-image: radial-gradient(var(--grid-color) 1px, transparent 1px); background-size: 20px 20px; position: relative; transition: background-color 0.3s; outline: none; }
+
+        /* 노드 스타일 강제 덮어쓰기 */
+        .drawflow .drawflow-node { background: var(--node-bg) !important; border: 2px solid var(--border-color) !important; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 0; color: var(--text-color); transition: background-color 0.2s, border-color 0.2s; }
+        .drawflow .drawflow-node.selected { background: #f0f0f0 !important; border: 2px solid #999999 !important; }
+        body.dark-mode .drawflow .drawflow-node.selected { background: #4a4a4a !important; border: 2px solid #888888 !important; }
+        .drawflow-node .inputs, .drawflow-node .outputs { width: 0; }
+        .drawflow .connection { stroke: #7f8c8d; stroke-width: 3px; }
+        
+        /* 🔥 텍스트 렌더링 오류 수정을 위한 CSS 보강 (line-height 명시) */
+        input[type="text"], textarea, select { 
+            background-color: var(--input-bg); 
+            color: var(--text-color); 
+            border: 1px solid var(--input-border); 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.5; 
+        }
+        input[type="text"]:focus, textarea:focus, select:focus { border-color: #3498db; outline: none; }
+
+        /* 캐릭터 카드 스타일 */
+        .character-node { width: 260px; }
+        .character-card { padding: 15px; }
+        .name-input { width: 100%; border: none; border-bottom: 2px solid var(--input-border); padding: 5px; font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 10px; box-sizing: border-box; background: transparent; }
+        .img-container { width: 100%; height: 160px; background: var(--input-border); border-radius: 4px; overflow: hidden; position: relative; cursor: pointer; border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+        .img-container img { width: 100%; height: 100%; object-fit: cover; }
+        .title-input { width: 100%; border-radius: 4px; padding: 6px 8px; font-size: 13px; font-weight: bold; margin-bottom: 5px; box-sizing: border-box; }
+        .scenario-input { width: 100%; height: 60px; resize: none; border-radius: 4px; padding: 8px; font-size: 12px; box-sizing: border-box; }
+
+        /* 관계 카드 스타일 */
+        .relation-node { width: 180px; border-radius: 20px; border-width: 3px; }
+        .relation-card { padding: 15px; text-align: center; }
+        .relation-select { width: 100%; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-weight: bold; cursor: pointer; }
+        .relation-input { width: 100%; border: none; border-bottom: 1px solid var(--input-border); padding: 5px; font-size: 12px; text-align: center; box-sizing: border-box; background: transparent; }
+
+        .drawflow-node.rel-friendly:not(.selected) { background-color: #eafaf1 !important; border-color: #2ecc71 !important; }
+        .drawflow-node.rel-hostile:not(.selected) { background-color: #fdedec !important; border-color: #e74c3c !important; }
+        .drawflow-node.rel-love:not(.selected) { background-color: #f5eef8 !important; border-color: #9b59b6 !important; }
+        body.dark-mode .drawflow-node.rel-friendly:not(.selected) { background-color: #145a32 !important; border-color: #2ecc71 !important; }
+        body.dark-mode .drawflow-node.rel-hostile:not(.selected) { background-color: #78281f !important; border-color: #e74c3c !important; }
+        body.dark-mode .drawflow-node.rel-love:not(.selected) { background-color: #512e5f !important; border-color: #9b59b6 !important; }
+
+        /* 고정 도움말 버튼 및 모달 */
+        #help-btn { position: fixed; top: 20px; right: 20px; width: 40px; height: 40px; background-color: #3498db; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 1000; transition: 0.2s; }
+        #help-btn:hover { background-color: #2980b9; transform: scale(1.1); }
+        #help-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); z-index: 1001; align-items: center; justify-content: center; }
+        .modal-content { background-color: var(--node-bg); color: var(--text-color); width: 500px; max-width: 90%; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); line-height: 1.6; }
+        .modal-content h3 { margin-top: 0; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .modal-content ul { padding-left: 20px; margin-bottom: 20px; }
+        .modal-content li { margin-bottom: 8px; }
+        .close-btn { width: 100%; padding: 10px; background-color: #34495e; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
+        .close-btn:hover { background-color: #2c3e50; }
+    </style>
 </head>
 <body>
-    <div id="header-area">
-        <div class="top-bar">
-            <input type="text" id="scenario-title" value="시나리오 제목" placeholder="제목을 입력하세요">
-            <div class="btn-group">
-                <button onclick="saveData()">저장 (JSON)</button>
-                <button onclick="triggerLoad()">불러오기</button>
-                <input type="file" id="file-input" style="display: none;" onchange="loadData(this)">
-            </div>
+
+    <div id="sidebar">
+        <h2>시나리오 맵 툴</h2>
+        <button class="btn btn-primary" onclick="addCharacter()">👤 캐릭터 추가</button>
+        <button class="btn btn-secondary" onclick="addRelation()">🔗 관계 추가</button>
+        
+        <div class="zoom-controls" style="margin-top: 5px;">
+            <button class="btn" onclick="editor.zoom_in()">🔍 +</button>
+            <button class="btn" onclick="editor.zoom_reset()">100%</button>
+            <button class="btn" onclick="editor.zoom_out()">🔍 -</button>
         </div>
-        <div class="tab-bar" id="tab-container">
-            <button class="add-tab-btn" onclick="addTab()">+</button>
+
+        <button class="btn btn-action" onclick="autoAlign()">✨ 자동 정렬</button>
+        <button class="btn" onclick="toggleDarkMode()">🌙 다크 모드 전환</button>
+
+        <hr style="width: 100%; border: 0; border-top: 1px solid #4a6278; margin: 10px 0;">
+        <button class="btn btn-success" onclick="exportImage()">📷 이미지로 캡처 (.png)</button>
+        <button class="btn" onclick="exportJSON()">💾 파일로 저장 (.json)</button>
+        <input type="file" id="importFile" accept=".json" style="display: none;" onchange="importJSON(event)">
+        <button class="btn" onclick="document.getElementById('importFile').click()">📂 불러오기 (.json)</button>
+        <button class="btn" style="background-color: #c0392b; border-color: #e74c3c;" onclick="editor.clearModuleSelected()">🗑️ 선택 취소</button>
+    </div>
+
+    <div id="drawflow"></div>
+
+    <div id="help-btn" onclick="toggleHelp()">?</div>
+
+    <div id="help-modal">
+        <div class="modal-content">
+            <h3>📖 시나리오 맵 에디터 사용법</h3>
+            <ul>
+                <li><strong>캐릭터 추가:</strong> 좌측의 '캐릭터 추가' 버튼을 눌러 노드를 생성합니다. 회색 영역을 클릭하면 PC의 이미지를 업로드할 수 있습니다.</li>
+                <li><strong>관계 연결:</strong> 각 카드의 좌우 측면에 있는 작은 원(포트)을 마우스로 드래그하여 서로 선을 연결합니다.</li>
+                <li><strong>관계 속성:</strong> 관계 카드 안의 드롭다운 메뉴를 변경하면 카드의 배경색이 직관적으로 변합니다.</li>
+                <li><strong>화면 조작:</strong> 캔버스 빈 공간을 드래그하여 화면을 이동하고, 마우스 휠을 굴려 화면을 확대/축소할 수 있습니다.</li>
+                <li><strong>카드 삭제:</strong> <b>지우고 싶은 카드(노드)를 클릭해 선택한 뒤, 키보드의 'Delete' 키를 누르면 삭제됩니다.</b></li>
+                <li><strong>자동 정렬:</strong> '자동 정렬'을 누르면 선이 연결된 순서(서사 흐름)에 따라 왼쪽에서 오른쪽으로 깔끔하게 자동 배치됩니다.</li>
+                <li><strong>이미지 캡처:</strong> 현재 화면에 보이는 마인드맵 전체를 이미지(PNG) 파일로 다운로드하여 문서에 첨부할 수 있습니다.</li>
+            </ul>
+            <button class="close-btn" onclick="toggleHelp()">닫기</button>
         </div>
     </div>
 
-    <div id="menu-container">
-        <div id="menu-btn">메뉴</div>
-        <div id="menu-items">
-            <div class="draggable-source" draggable="true" ondragstart="dragStart(event, 'title')">제목 객체</div>
-            <div class="draggable-source" draggable="true" ondragstart="dragStart(event, 'plot')">사건/사고</div>
-            <div class="draggable-source" draggable="true" ondragstart="dragStart(event, 'char')">캐릭터</div>
-            <div class="draggable-source" draggable="true" ondragstart="dragStart(event, 'desc')">설명</div>
-        </div>
-    </div>
+    <script>
+        const container = document.getElementById("drawflow");
+        const editor = new Drawflow(container);
+        editor.reroute = true;
+        editor.zoom_max = 2.0; editor.zoom_min = 0.3; editor.zoom_value = 0.1; 
+        editor.start();
 
-    <div id="viewport">
-        <div id="canvas" ondrop="drop(event)" ondragover="allowDrop(event)">
-            <div id="main-line"></div>
-            <svg id="svg-layer"></svg>
-        </div>
-    </div>
+        // 1. 마우스 휠 줌 기능
+        container.addEventListener('wheel', function(e) {
+            e.preventDefault();
+            if (e.deltaY > 0) { editor.zoom_out(); } 
+            else { editor.zoom_in(); }
+        }, { passive: false });
 
-    <script src="script.js"></script>
+        editor.on('nodeCreated', function(id) { updateNodeColors(); });
+
+        let nextCharX = 150; let nextCharY = 150;
+        let nextRelX = 450;  let nextRelY = 200;
+
+        function addCharacter() {
+            const placeholderImg = "data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22150%22%20height%3D%22150%22%20viewBox%3D%220%200%20150%20150%22%3E%3Crect%20width%3D%22150%22%20height%3D%22150%22%20fill%3D%22transparent%22%2F%3E%3Ctext%20x%3D%2250%25%22%20y%3D%2250%25%22%20dominant-baseline%3D%22middle%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%20font-size%3D%2214px%22%20fill%3D%22%23999999%22%3E%EC%9D%B4%EB%AF%B8%EC%A7%80%20%ED%81%B4%EB%A6%AD%3C%2Ftext%3E%3C%2Fsvg%3E";
+            const html = `
+            <div class="character-card">
+                <input type="text" df-charName placeholder="캐릭터 이름 (예: 아스트라)" class="name-input">
+                <div class="img-container" onclick="triggerUpload(this)">
+                    <img df-imgSrc src="${placeholderImg}">
+                    <input type="file" accept="image/png, image/jpeg, image/webp" style="display:none;" onchange="handleImageUpload(event, this)">
+                </div>
+                <input type="text" df-scenarioTitle placeholder="시나리오 제목" class="title-input">
+                <textarea df-scenarioContent placeholder="세부 내용 입력" class="scenario-input"></textarea>
+            </div>`;
+            const data = { charName: '', imgSrc: placeholderImg, scenarioTitle: '', scenarioContent: '' };
+            
+            editor.addNode('character', 1, 1, nextCharX, nextCharY, 'character-node', data, html);
+            nextCharX += 40; nextCharY += 40;
+            if (nextCharX > 400) { nextCharX = 150; nextCharY = 150; }
+        }
+
+        function addRelation() {
+            const html = `
+            <div class="relation-card">
+                <select df-relationType class="relation-select" onchange="updateNodeColors()">
+                    <option value="neutral">선택 (기본)</option>
+                    <option value="friendly">🤝 협력 / 우호</option>
+                    <option value="hostile">⚔️ 적대 / 대립</option>
+                    <option value="love">❤️ 애정 / 짝사랑</option>
+                </select>
+                <input type="text" df-relationLabel placeholder="상세 (예: 라이벌)" class="relation-input">
+            </div>`;
+            const data = { relationType: 'neutral', relationLabel: '' };
+            
+            editor.addNode('relation', 1, 1, nextRelX, nextRelY, 'relation-node', data, html);
+            nextRelX += 40; nextRelY += 40;
+            if (nextRelX > 700) { nextRelX = 450; nextRelY = 200; }
+        }
+
+        function updateNodeColors() {
+            const selects = document.querySelectorAll('.relation-select');
+            selects.forEach(select => {
+                const nodeElement = select.closest('.drawflow-node');
+                if (!nodeElement) return;
+                nodeElement.classList.remove('rel-friendly', 'rel-hostile', 'rel-love');
+                const val = select.value;
+                if (val === 'friendly') { nodeElement.classList.add('rel-friendly'); } 
+                else if (val === 'hostile') { nodeElement.classList.add('rel-hostile'); } 
+                else if (val === 'love') { nodeElement.classList.add('rel-love'); }
+            });
+        }
+
+        function triggerUpload(element) { element.querySelector('input[type="file"]').click(); }
+        function handleImageUpload(event, inputElement) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const base64Str = e.target.result;
+                inputElement.closest('.img-container').querySelector('img').src = base64Str;
+                const nodeId = inputElement.closest('.drawflow-node').id.slice(5); 
+                let nodeData = editor.getNodeFromId(nodeId).data;
+                nodeData.imgSrc = base64Str;
+                editor.updateNodeDataFromId(nodeId, nodeData);
+            };
+            reader.readAsDataURL(file); 
+        }
+
+        // 연결 구조 기반의 똑똑한 자동 정렬(Tree Layout) 알고리즘
+        function autoAlign() {
+            const nodes = editor.drawflow.drawflow.Home.data;
+            const nodeIds = Object.keys(nodes);
+            if (nodeIds.length === 0) return;
+
+            let inDegree = {};
+            nodeIds.forEach(id => inDegree[id] = 0);
+            nodeIds.forEach(id => {
+                const outputs = nodes[id].outputs;
+                for (let key in outputs) {
+                    outputs[key].connections.forEach(conn => {
+                        inDegree[conn.node] = (inDegree[conn.node] || 0) + 1;
+                    });
+                }
+            });
+
+            let levels = {};
+            let visited = new Set();
+            
+            function bfs(startNodes, baseLevel = 0) {
+                let queue = startNodes.map(id => ({ id: id, level: baseLevel }));
+                while(queue.length > 0) {
+                    let curr = queue.shift();
+                    if (visited.has(curr.id)) continue;
+                    
+                    visited.add(curr.id);
+                    levels[curr.id] = curr.level;
+                    
+                    const outputs = nodes[curr.id].outputs;
+                    for (let key in outputs) {
+                        outputs[key].connections.forEach(conn => {
+                            if (!visited.has(conn.node)) {
+                                queue.push({ id: conn.node, level: curr.level + 1 });
+                            }
+                        });
+                    }
+                }
+            }
+
+            let roots = nodeIds.filter(id => inDegree[id] === 0);
+            bfs(roots, 0);
+
+            nodeIds.forEach(id => {
+                if (!visited.has(id)) bfs([id], 0);
+            });
+
+            let levelGroups = {};
+            for (let id in levels) {
+                let lvl = levels[id];
+                if (!levelGroups[lvl]) levelGroups[lvl] = [];
+                levelGroups[lvl].push(id);
+            }
+
+            const startX = 50; const startY = 50;
+            const xOffset = 380; 
+            const yOffset = 350; 
+
+            Object.keys(levelGroups).sort((a,b)=>a-b).forEach(lvl => {
+                let group = levelGroups[lvl];
+                let curX = startX + (parseInt(lvl) * xOffset);
+                
+                group.forEach((id, index) => {
+                    let curY = startY + (index * yOffset);
+                    editor.drawflow.drawflow.Home.data[id].pos_x = curX;
+                    editor.drawflow.drawflow.Home.data[id].pos_y = curY;
+                    
+                    const nodeElement = document.getElementById("node-" + id);
+                    if (nodeElement) {
+                        nodeElement.style.left = curX + "px";
+                        nodeElement.style.top = curY + "px";
+                    }
+                    editor.updateConnectionNodes("node-" + id);
+                });
+            });
+        }
+
+        function toggleDarkMode() { document.body.classList.toggle('dark-mode'); }
+        function toggleHelp() {
+            const modal = document.getElementById('help-modal');
+            modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
+        }
+
+        // 🔥 수정된 이미지 캡처 기능 (글자 잘림 버그 완벽 수정)
+        function exportImage() {
+            // 1. 현재 줌 상태 저장
+            const currentZoom = editor.zoom;
+            
+            // 2. 텍스트 렌더링 버그 방지를 위해 줌을 강제로 100%로 리셋
+            editor.zoom = 1;
+            editor.zoom_refresh();
+
+            // 3. 화면이 100% 비율로 다시 그려질 시간을 잠시 준 뒤 캡처 진행
+            setTimeout(() => {
+                const drawflowElement = document.getElementById('drawflow');
+                const bgColor = document.body.classList.contains('dark-mode') ? '#1e1e1e' : '#f9f9f9';
+                
+                html2canvas(drawflowElement, { 
+                    backgroundColor: bgColor,
+                    scale: 2, // 텍스트를 선명하게 렌더링 (고해상도)
+                    useCORS: true 
+                }).then(canvas => {
+                    const link = document.createElement('a');
+                    link.download = 'scenario_map.png';
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                    
+                    // 4. 캡처가 끝나면 사용자가 원래 보고 있던 줌 상태로 원상복구
+                    editor.zoom = currentZoom;
+                    editor.zoom_refresh();
+                });
+            }, 150); // 0.15초 대기
+        }
+
+        function exportJSON() {
+            const exportData = editor.export();
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData));
+            const a = document.createElement('a');
+            a.href = dataStr; a.download = "scenario_data.json";
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    editor.import(data);
+                    setTimeout(updateNodeColors, 100);
+                } catch (error) { alert("잘못된 JSON 파일 포맷입니다."); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+    </script>
 </body>
 </html>
